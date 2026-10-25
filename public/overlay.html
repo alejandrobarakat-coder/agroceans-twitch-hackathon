@@ -34,7 +34,7 @@ footer{margin-top:20px;color:#a8dbe4;font-size:13px}
 <body>
 <header>
   <strong>🌊 AGROCEANS</strong>
-  <span class="badge">LOCAL DEMO · NO TWITCH CONNECTION</span>
+  <span class="badge">AGROCEANS · EVENT SOURCE LABELED</span>
 </header>
 
 <h1>Twitch for Planet</h1>
@@ -47,14 +47,20 @@ footer{margin-top:20px;color:#a8dbe4;font-size:13px}
   </div>
   <div class="card">
     <div id="stamps" class="number">0</div>
-    <div class="label">STAMP issued</div>
+    <div class="label">Demo STAMP issued</div>
   </div>
   <div class="card">
     <div id="agro" class="number">0</div>
-    <div class="label">AGRO rewarded</div>
+    <div class="label">Demo AGRO rewarded</div>
   </div>
 </section>
 
+<section class="feed">
+  <h2>Existing Agro ecosystem</h2>
+  <div id="ecosystemStatus">Read-only integration not refreshed. Simulation remains available.</div>
+  <div id="chainTransactions"></div>
+  <div id="realReports"></div>
+</section>
 <section class="feed">
   <h2>🌎 Live activity</h2>
   <div id="status" class="subtitle">Connecting to demo bridge...</div>
@@ -66,8 +72,7 @@ footer{margin-top:20px;color:#a8dbe4;font-size:13px}
 </p>
 
 <footer>
-  Simulation only. No blockchain transaction, verified environmental
-  action, STAMP issuance, or AGRO reward is performed.
+  Demo activity is simulated. Verified integration records show integer AGRO base units; pending rewards are not confirmed payments.
 </footer>
 
 <script>
@@ -82,7 +87,9 @@ function updateStats(stats) {
 function addEvent(event) {
   const item = document.createElement('div');
   item.className = 'event';
-  item.textContent = '🌊 ' + event.username + ' joined the demo mission!';
+  item.textContent = event.type === 'reward'
+    ? 'VERIFIED · Action ' + event.actionId + ' · STAMP ' + (event.stamp ? event.stamp.status + ' / ' + event.stamp.reference : 'pending') + ' · AGRO base units ' + event.rewardUnits + ' · ' + event.status + ' · TX ' + (event.transactionId || 'pending') + ' · confirmations ' + event.confirmations
+    : event.type === 'twitch_participation' ? 'VERIFIED TWITCH · Participation received (no payout)' : 'SIMULATED · ' + event.username + ' joined the demo mission!';
   $('activity').prepend(item);
 
   while ($('activity').children.length > 8) {
@@ -93,19 +100,37 @@ function addEvent(event) {
 const stream = new EventSource('/events');
 
 stream.onopen = () => {
-  $('status').textContent = '🟢 Demo bridge connected';
+  $('status').textContent = '🟢 Bridge connected';
 };
 
 stream.onerror = () => {
-  $('status').textContent = '🟠 Reconnecting to demo bridge...';
+  $('status').textContent = '🟠 Reconnecting to bridge...';
 };
 
 stream.onmessage = message => {
   const event = JSON.parse(message.data);
 
   if (event.stats) updateStats(event.stats);
+  const ecosystem = event.type === 'ecosystem' ? event : event.ecosystem;
+  if (ecosystem) {
+    $('ecosystemStatus').textContent = (ecosystem.chain ? 'REAL AGROCOIN · height ' + ecosystem.chain.blockHeight : 'Chain unavailable') + ' · observed ' + ecosystem.observedAt + ' · ' + ecosystem.errors.join('; ');
+    $('chainTransactions').replaceChildren();
+    for (const tx of ecosystem.transactions) {
+      const item = document.createElement('div');
+      item.textContent = 'REAL CHAIN · TX ' + tx.transactionId + ' · ' + tx.status + ' · confirmations ' + tx.confirmations;
+      $('chainTransactions').append(item);
+    }
+    $('realReports').replaceChildren();
+    for (const report of ecosystem.reports) {
+      const item = document.createElement('div');
+      item.textContent = 'MATRIX REPORT · ' + report.folio + ' · STAMP ' + report.stamp.status + ' · ' + report.stamp.verification + ' · Reward ' + report.reward.status + ' · AGRO ' + (report.reward.amountAgro || 'unknown') + ' · approval: ' + report.approval;
+      $('realReports').append(item);
+    }
+  }
+  if (event.type === 'twitch_revoked') $('status').textContent = 'Twitch subscription revoked';
 
-  if (event.type === 'ocean_participant') {
+  if (event.rewards) event.rewards.forEach(addEvent);
+  if (['ocean_participant', 'reward', 'twitch_participation'].includes(event.type)) {
     addEvent(event);
   }
 };

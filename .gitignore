@@ -1,7 +1,8 @@
-node_modules/
 .env
 .env.*
 !.env.example
+var/
+node_modules/
 *.pem
 *.key
 *.log

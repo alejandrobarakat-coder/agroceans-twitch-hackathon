@@ -1,0 +1,14 @@
+{
+  "name": "agroceans-twitch-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test",
+    "check": "node --check src/server.js && node --check src/integration.js && node --check src/ecosystem.js && node --check scripts/verify-readonly.js",
+    "verify:readonly": "node scripts/verify-readonly.js"
+  }
+}
