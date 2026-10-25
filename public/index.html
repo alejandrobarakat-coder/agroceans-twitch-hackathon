@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgroCeans | Twitch for Planet</title>
+<style>
+:root{font-family:system-ui;background:#071c27;color:#e9f8fc}
+*{box-sizing:border-box}
+body{margin:0;padding:24px}
+main{max-width:1000px;margin:auto}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px}
+h1{font-size:clamp(30px,5vw,54px);margin:14px 0}
+p{color:#b4d5df}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+.card{background:#103140;border:1px solid #276071;border-radius:18px;padding:22px}
+button{background:#4de0b1;color:#052a26;border:0;border-radius:10px;padding:13px 18px;font-weight:bold;cursor:pointer}
+button:disabled{opacity:.5;cursor:not-allowed}
+.big{font-size:32px;font-weight:800}
+.tag{font-size:12px;background:#214b5c;padding:7px 10px;border-radius:20px}
+#feed{min-height:130px;max-height:220px;overflow:auto}
+small{color:#9ec6d1}
+</style>
+</head>
+<body>
+<main>
+<header>
+<strong>🌊 AGROCEANS</strong>
+<span class="tag">TWITCH FOR PLANET · LOCAL DEMO</span>
+</header>
+
+<h1>Turn your stream into environmental action.</h1>
+<p>Engage your community. Support real-world impact. Track eligible AgroCoin rewards.</p>
+
+<section class="grid">
+<div class="card">
+<h2>🌍 Active mission</h2>
+<h3>Keep our oceans clean</h3>
+<p>Mobilize your community to document and support verified environmental activities.</p>
+<button id="join">Join mission</button>
+</div>
+
+<div class="card">
+<h2>👥 Community</h2>
+<div id="count" class="big">0</div>
+<small>Demo participants</small>
+</div>
+
+<div class="card">
+<h2>🔏 STAMP</h2>
+<div id="stamp" class="big">Pending</div>
+<small>Simulation only — no blockchain transaction</small>
+</div>
+
+<div class="card">
+<h2>🪙 AgroCoin rewards</h2>
+<div id="reward" class="big">0 AGRO</div>
+<small>Illustrative only — no tokens issued</small>
+</div>
+</section>
+
+<section class="card" style="margin-top:16px">
+<h2>📡 Live activity</h2>
+<div id="feed" aria-live="polite">
+<p>Waiting for participants...</p>
+</div>
+</section>
+<p><small>Hackathon prototype. Twitch authentication, evidence verification,
+AgroBOL and wallet connections are not yet enabled.</small></p>
+</main>
+<script>
+let participants=0;
+const count=document.getElementById('count');
+const stamp=document.getElementById('stamp');
+const reward=document.getElementById('reward');
+const feed=document.getElementById('feed');
+document.getElementById('join').addEventListener('click',()=>{
+  participants++;
+  count.textContent=participants;
+  stamp.textContent='Demo event #'+participants;
+  reward.textContent='0 AGRO';
+  const p=document.createElement('p');
+  p.textContent='🌱 Demo participant joined mission #'+participants;
+  if(participants===1)feed.textContent='';
+  feed.prepend(p);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgroCeans — Twitch Overlay</title>
+<style>
+*{box-sizing:border-box}
+body{
+  margin:0;
+  min-height:100vh;
+  font-family:Arial,sans-serif;
+  color:#fff;
+  background:linear-gradient(135deg,#061522,#073b51);
+  padding:24px
+}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px}
+h1{font-size:clamp(24px,5vw,44px);margin:12px 0}
+.badge{background:#165b70;padding:9px 14px;border-radius:20px}
+.subtitle{color:#a8dbe4}
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:24px 0}
+.card{background:#ffffff12;border:1px solid #ffffff25;border-radius:18px;padding:20px;text-align:center}
+.number{font-size:clamp(30px,7vw,64px);font-weight:bold;color:#59e1cf}
+.label{font-size:13px;color:#b9d5df}
+.feed{background:#ffffff12;border-radius:18px;padding:20px;min-height:130px}
+.feed h2{margin-top:0}
+.event{padding:10px 0;border-bottom:1px solid #ffffff20}
+button{background:#39c9b5;color:#06252e;border:0;border-radius:12px;padding:14px 22px;font-weight:bold;cursor:pointer}
+button:disabled{opacity:.5}
+footer{margin-top:20px;color:#a8dbe4;font-size:13px}
+@media(max-width:500px){.cards{gap:7px}.card{padding:12px}}
+</style>
+</head>
+<body>
+<header>
+  <strong>🌊 AGROCEANS</strong>
+  <span class="badge">LOCAL DEMO · NO TWITCH CONNECTION</span>
+</header>
+
+<h1>Twitch for Planet</h1>
+<p class="subtitle">Live environmental mission · Community participation</p>
+
+<section class="cards">
+  <div class="card">
+    <div id="participants" class="number">0</div>
+    <div class="label">Participants</div>
+  </div>
+  <div class="card">
+    <div id="stamps" class="number">0</div>
+    <div class="label">STAMP issued</div>
+  </div>
+  <div class="card">
+    <div id="agro" class="number">0</div>
+    <div class="label">AGRO rewarded</div>
+  </div>
+</section>
+
+<section class="feed">
+  <h2>🌎 Live activity</h2>
+  <div id="status" class="subtitle">Connecting to demo bridge...</div>
+  <div id="activity"></div>
+</section>
+
+<p>
+  <p class="subtitle">Demo events are controlled locally.</p>
+</p>
+
+<footer>
+  Simulation only. No blockchain transaction, verified environmental
+  action, STAMP issuance, or AGRO reward is performed.
+</footer>
+
+<script>
+const $ = id => document.getElementById(id);
+
+function updateStats(stats) {
+  $('participants').textContent = stats.participants ?? 0;
+  $('stamps').textContent = stats.stamps ?? 0;
+  $('agro').textContent = stats.agro ?? 0;
+}
+
+function addEvent(event) {
+  const item = document.createElement('div');
+  item.className = 'event';
+  item.textContent = '🌊 ' + event.username + ' joined the demo mission!';
+  $('activity').prepend(item);
+
+  while ($('activity').children.length > 8) {
+    $('activity').lastChild.remove();
+  }
+}
+
+const stream = new EventSource('/events');
+
+stream.onopen = () => {
+  $('status').textContent = '🟢 Demo bridge connected';
+};
+
+stream.onerror = () => {
+  $('status').textContent = '🟠 Reconnecting to demo bridge...';
+};
+
+stream.onmessage = message => {
+  const event = JSON.parse(message.data);
+
+  if (event.stats) updateStats(event.stats);
+
+  if (event.type === 'ocean_participant') {
+    addEvent(event);
+  }
+};
+
+
+</script>
+</body>
+</html>
