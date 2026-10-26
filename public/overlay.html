@@ -43,7 +43,7 @@ footer{margin-top:20px;color:#a8dbe4;font-size:13px}
 <section class="cards">
   <div class="card">
     <div id="participants" class="number">0</div>
-    <div class="label">Participants</div>
+    <div class="label">Simulated participants</div>
   </div>
   <div class="card">
     <div id="stamps" class="number">0</div>
@@ -55,6 +55,12 @@ footer{margin-top:20px;color:#a8dbe4;font-size:13px}
   </div>
 </section>
 
+<section class="feed">
+  <h2>Live Twitch participation · no payout</h2>
+  <p id="twitchStatus">Twitch ingress disabled or awaiting status.</p>
+  <p><strong id="liveCommands">0</strong> !ocean commands · <strong id="liveParticipants">0</strong> unique Twitch participants</p>
+  <p>Chat participation does not verify environmental action or issue STAMP/AGRO.</p>
+</section>
 <section class="feed">
   <h2>Existing Agro ecosystem</h2>
   <div id="ecosystemStatus">Read-only integration not refreshed. Simulation remains available.</div>
@@ -111,6 +117,12 @@ stream.onmessage = message => {
   const event = JSON.parse(message.data);
 
   if (event.stats) updateStats(event.stats);
+  if (event.liveTwitch) {
+    $('liveCommands').textContent = event.liveTwitch.commands ?? 0;
+    $('liveParticipants').textContent = event.liveTwitch.uniqueParticipants ?? 0;
+  }
+  const twitch = event.twitchStatus || (event.type === 'twitch_status' ? event : null);
+  if (twitch) $('twitchStatus').textContent = 'EventSub: ' + twitch.twitchSubscriptionStatus + ' · ' + (twitch.twitchConnected ? 'Ready for chat' : 'Not connected') + (twitch.twitchMissingPermissions?.length ? ' · Missing permissions: ' + twitch.twitchMissingPermissions.join(', ') : '');
   const ecosystem = event.type === 'ecosystem' ? event : event.ecosystem;
   if (ecosystem) {
     $('ecosystemStatus').textContent = (ecosystem.chain ? 'REAL AGROCOIN · height ' + ecosystem.chain.blockHeight : 'Chain unavailable') + ' · observed ' + ecosystem.observedAt + ' · ' + ecosystem.errors.join('; ');
@@ -127,7 +139,7 @@ stream.onmessage = message => {
       $('realReports').append(item);
     }
   }
-  if (event.type === 'twitch_revoked') $('status').textContent = 'Twitch subscription revoked';
+  if (event.type === 'twitch_revoked') $('twitchStatus').textContent = 'Twitch subscription revoked';
 
   if (event.rewards) event.rewards.forEach(addEvent);
   if (['ocean_participant', 'reward', 'twitch_participation'].includes(event.type)) {

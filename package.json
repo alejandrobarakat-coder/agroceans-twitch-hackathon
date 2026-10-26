@@ -8,7 +8,7 @@
   "scripts": {
     "start": "node src/server.js",
     "test": "node --test",
-    "check": "node --check src/server.js && node --check src/integration.js && node --check src/ecosystem.js && node --check scripts/verify-readonly.js",
+    "check": "node --check src/server.js && node --check src/twitch-oauth.js && node --check src/oauth-bootstrap.js && node --check scripts/oauth-bootstrap.js && node --check src/integration.js && node --check src/ecosystem.js && node --check scripts/verify-readonly.js && node --check src/oauth-pairing.js && node --check scripts/oauth-pairing.js && node --check src/twitch-storage.js && node --check src/twitch-client.js && node --check src/twitch-chat.js && node --check scripts/twitch-eventsub.js",
     "verify:readonly": "node scripts/verify-readonly.js"
   }
 }
