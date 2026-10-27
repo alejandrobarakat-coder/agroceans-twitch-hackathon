@@ -135,7 +135,7 @@ stream.onmessage = message => {
     $('realReports').replaceChildren();
     for (const report of ecosystem.reports) {
       const item = document.createElement('div');
-      item.textContent = 'MATRIX REPORT · ' + report.folio + ' · STAMP ' + report.stamp.status + ' · ' + report.stamp.verification + ' · Reward ' + report.reward.status + ' · AGRO ' + (report.reward.amountAgro || 'unknown') + ' · approval: ' + report.approval;
+      item.textContent = 'PUBLIC MATRIX REPORT · ' + report.folio + ' · STAMP ' + (report.stamp ? report.stamp.status + ' · ' + report.stamp.verification : 'not available');
       $('realReports').append(item);
     }
   }
@@ -147,6 +147,26 @@ stream.onmessage = message => {
   }
 };
 
+const planetReports = new EventSource('/planet/events');
+function showPublicReports(message) {
+  try {
+    const event = JSON.parse(message.data);
+    $('realReports').replaceChildren();
+    const heading = document.createElement('p');
+    heading.textContent = 'Public reports: ' + event.status + ' · observed ' + (event.observedAt || 'not refreshed');
+    $('realReports').append(heading);
+    for (const report of event.reports || []) {
+      const item = document.createElement('div');
+      item.textContent = report.folio + ' · STAMP ' + (report.stamp ? report.stamp.status +
+        ' · reference ' + (report.stamp.reference || 'not exposed') + ' · TX ' + (report.stamp.transactionId || 'not exposed') +
+        ' · ' + report.stamp.verification : 'not available; none issued by this bridge');
+      $('realReports').append(item);
+    }
+  } catch { $('realReports').textContent = 'Public report snapshot unavailable.'; }
+}
+planetReports.addEventListener('snapshot', showPublicReports);
+planetReports.addEventListener('report', showPublicReports);
+planetReports.onerror = () => { $('realReports').textContent = 'Public report connection lost; awaiting a fresh snapshot.'; };
 
 </script>
 </body>

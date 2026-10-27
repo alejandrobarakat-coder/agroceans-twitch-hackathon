@@ -3,14 +3,15 @@ const crypto = require('node:crypto');
 const path = require('node:path');
 const { TwitchStorage, TwitchFault, digest } = require('./twitch-storage');
 const { TwitchClient, TwitchTokens, check } = require('./twitch-client');
+const { commandEnvelope, routeCommand } = require('./command-router');
 const CALLBACK = 'https://twitch.theagrostore.com/twitch/eventsub';
 const DIRECTORY = path.resolve(__dirname, '../var/twitch-chat');
 const subscriptionId = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,160}$/.test(value);
 const freshState = () => ({ version: 1, registration: null, deliveries: {}, messages: {}, participants: {}, commands: 0, lastEventAt: null });
 class TwitchChat {
-  constructor({ client, tokens, storage, broadcasterId, readerId, now = Date.now, publish = () => {}, refreshEnabled = false, paymentsEnabled = false }) {
+  constructor({ client, tokens, storage, broadcasterId, readerId, now = Date.now, publish = () => {}, refreshEnabled = false, paymentsEnabled = false, chessSession = null }) {
     check(!paymentsEnabled, 'payments_must_be_disabled');
-    Object.assign(this, { client, tokens, storage, broadcasterId, readerId, now, publish, refreshEnabled });
+    Object.assign(this, { client, tokens, storage, broadcasterId, readerId, now, publish, refreshEnabled, chessSession });
     this.observed = { status: 'unknown', checkedAt: 0 }; this.timer = null; this.running = null;
   }
   state() {
@@ -27,6 +28,7 @@ class TwitchChat {
       const s = this.state(); return { commands: s.commands, uniqueParticipants: Object.keys(s.participants).length, lastEventAt: s.lastEventAt };
     });
   }
+  chessSnapshot() { return this.chessSession ? this.chessSession.snapshot() : null; }
   health() {
     try {
       const record = this.storage.transaction(() => this.state().registration);
@@ -157,13 +159,26 @@ class TwitchChat {
         check(value?.broadcaster_user_id === this.broadcasterId && /^\d{1,30}$/.test(value.chatter_user_id || '') && typeof value.message_id === 'string' && value.message_id.length > 0 && value.message_id.length <= 160 && typeof value.message?.text === 'string' && value.message.text.length <= 2000, 'invalid_webhook');
         check(!value.source_broadcaster_user_id || value.source_broadcaster_user_id === this.broadcasterId, 'shared_chat_not_allowed');
         r.status = 'enabled'; this.observed = { status: 'enabled', checkedAt: this.now() }; s.lastEventAt = this.now();
-        if (value.message.text.trim().toLowerCase() === '!ocean') {
+        const envelope = commandEnvelope(value, { broadcasterId: this.broadcasterId, timestamp: Date.parse(timestamp) });
+        // Legacy messages remain authoritative after upgrading an existing store.
+        const authoritativeChess = envelope?.domain === 'chess' && this.chessSession;
+        const routed = envelope && !s.messages[envelope.id] ? routeCommand(authoritativeChess ? {} : s.commandDomains, envelope, this.broadcasterId) : null;
+        if (routed && envelope.domain === 'planet') {
           const message = digest(this.broadcasterId + ':' + value.message_id), participant = digest(this.broadcasterId + ':' + value.chatter_user_id);
           if (!s.messages[message]) {
             check(Object.keys(s.messages).length < 50000 && (s.participants[participant] || Object.keys(s.participants).length < 10000) && s.commands < Number.MAX_SAFE_INTEGER, 'chat_capacity');
             s.messages[message] = true; s.participants[participant] = true; s.commands++;
-            event = { type: 'twitch_participation', command: '!ocean', verified: true, simulated: false, timestamp: this.now(),
+            event = { ...routed.event, type: 'twitch_participation', eventType: 'planet.command',
               liveTwitch: { commands: s.commands, uniqueParticipants: Object.keys(s.participants).length, lastEventAt: s.lastEventAt } };
+          }
+        }
+        if (routed) {
+          if (authoritativeChess) {
+            const result = this.chessSession.apply(envelope, { expectedPly: this.chessSession.snapshot().ply });
+            if (!result.duplicate) event = result.event;
+          } else {
+            s.commandDomains = routed.state;
+            if (envelope.domain === 'chess') event = routed.event;
           }
         }
       }
@@ -190,7 +205,10 @@ function createTwitchChat({ env = process.env, fetchImpl, now, publish, director
   const storage = new TwitchStorage(directory), client = new TwitchClient({ clientId: env.TWITCH_CLIENT_ID, clientSecret: env.TWITCH_CLIENT_SECRET, fetchImpl });
   const broadcasterId = env.TWITCH_BROADCASTER_ID, readerId = env.TWITCH_CHAT_READER_ID || broadcasterId;
   const tokens = new TwitchTokens({ client, storage, broadcasterId, readerId, now, credentialsFile });
-  return new TwitchChat({ client, tokens, storage, broadcasterId, readerId, now, publish, refreshEnabled: env.TWITCH_TOKEN_REFRESH_ENABLED === 'true' });
+  const chessSession = env.CHESS_SESSION_ENABLED === 'true' ? new (require('./chess-session').ChessSession)({
+    directory: path.resolve(directory, '../chess'), broadcasterId, sessionId: env.CHESS_SESSION_ID || 'hackathon'
+  }) : null;
+  return new TwitchChat({ client, tokens, storage, broadcasterId, readerId, now, publish, chessSession, refreshEnabled: env.TWITCH_TOKEN_REFRESH_ENABLED === 'true' });
 }
 function eventSubHandler(chat) {
   return async (req, res, url) => {
@@ -204,7 +222,7 @@ function eventSubHandler(chat) {
       const result = chat.receive({ headers: req.headers, rawBody: Buffer.concat(chunks) });
       res.writeHead(result.status, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end(result.body);
     } catch (e) {
-      res.writeHead(['storage_busy', 'storage_unavailable', 'unsafe_storage', 'invalid_chat_storage', 'chat_capacity', 'credentials_not_validated'].includes(e.category) ? 503 : e instanceof TwitchFault ? 403 : 503);
+      res.writeHead(['storage_busy', 'storage_unavailable', 'unsafe_storage', 'invalid_chat_storage', 'invalid_chess_storage', 'chess_capacity', 'chat_capacity', 'credentials_not_validated'].includes(e.category) ? 503 : e instanceof TwitchFault ? 403 : 503);
       res.end('Twitch event unavailable or rejected');
     }
     return true;

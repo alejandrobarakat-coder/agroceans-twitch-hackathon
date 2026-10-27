@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Pinche Chess · Twitch Plays Chess</title>
+  <link rel="stylesheet" href="/chess/style.css">
+  <script src="/chess/app.js" defer></script>
+</head>
+<body>
+  <main>
+    <header><a class="brand" href="/chess">PIN<span>CHE</span> CHESS</a><span class="tag">TWITCH PLAYS CHESS</span></header>
+    <section class="intro"><p class="eyebrow">THE CHAT MAKES THE NEXT MOVE</p><h1>Your chat. One board.</h1>
+      <p>Send <code>!move e2e4</code> in the connected Twitch channel. The first legal move wins each turn.</p>
+      <p class="editorial">Pinche Tulum LIVE · Alejandro Barakat</p>
+    </section>
+    <div class="badges"><span id="source" class="tag">Awaiting source status</span><span id="transport" class="tag">Connecting to chess bridge…</span></div>
+    <div class="layout">
+      <section class="play" aria-label="Chess match">
+        <div class="match-heading"><h2 id="turn">Awaiting authoritative position</h2><span id="ply">Ply —</span></div>
+        <div id="board" class="board" role="img" aria-label="Chessboard awaiting server snapshot"></div>
+        <p id="lastMove">Last move: —</p>
+        <p id="result" class="result" aria-live="polite"></p>
+      </section>
+      <aside>
+        <section class="panel"><h2>Live connection</h2><p id="twitch">Twitch status unknown</p><p id="session">Session —</p>
+          <p id="notice" aria-live="polite">Loading current match…</p></section>
+        <section class="panel"><h2>Move history</h2><ol id="history" class="history" aria-label="Authoritative move history"></ol></section>
+        <details class="panel"><summary>Match exports</summary><h3>FEN</h3><pre id="fen"></pre><h3>PGN</h3><pre id="pgn"></pre></details>
+      </aside>
+    </div>
+    <footer>Read-only match viewer. Moves are validated by the server. Simulation is labeled explicitly. No rewards or tokens are issued. This page receives chess events; the Twitch video broadcast is separate.</footer>
+  </main>
+</body>
+</html>

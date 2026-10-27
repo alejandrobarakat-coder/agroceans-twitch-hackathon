@@ -1,3 +1,8 @@
+> Historical assessment: implementation descriptions below may predate the current
+> source. See [current architecture](ARCHITECTURE.md) and
+> [EventSub implementation](TWITCH_CHAT_ACTIVATION.md). Historical observations
+> do not establish current deployment or connectivity.
+
 # Twitch chat demonstration: implementation assessment
 
 The assessment below is preserved as the implementation plan. The approved

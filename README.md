@@ -1,18 +1,31 @@
-# AgroCeans — Twitch for Planet
+# Pinche Chess and AgroCeans — shared hackathon bridge
 
 Codex x TwitchCon Hackathon 2026
 
-An independent Twitch web experience connecting
-streamers and viewers with environmental action.
+Two distinct submissions share an isolated Twitch bridge: Pinche Chess — Twitch
+Plays Chess, and AgroCeans — Twitch for Planet. Pinche Tulum LIVE and Alejandro
+Barakat provide the editorial broadcast layer.
 
-Planned features:
-- Twitch streamer integration
-- Interactive environmental missions
-- Live participation and overlays
-- AgroWallet identity
-- AgroBOL activity records
-- STAMP verification
-- Eligible AgroCoin rewards
+Current judge demos and setup: [Stage 5 guide](docs/JUDGE_DEMOS.md).
+Historical source stages: [architecture and routing](docs/ARCHITECTURE.md).
+Older activation/discovery notes below record earlier sessions, not current
+deployment evidence. The existing AgroCeans wallets, rewards and STAMP work in
+the original ecosystem; pending items here concern hackathon bridge integration.
+SSE carries application events; actual Twitch video requires a broadcaster.
+
+## Two distinct projects
+
+| Submission | Implemented hackathon behavior | Distinct judge view |
+| --- | --- | --- |
+| **Pinche Chess — Twitch Plays Chess** | Validated Twitch UCI commands feed an isolated authoritative chess session: legal moves, turn/king safety, special moves, game results, FEN/PGN, history and persistent idempotency. First legal move per turn; no voting. | `/judge/chess` |
+| **AgroCeans — Twitch for Planet** | Exact `!ocean` participation plus authorized read-only ingestion of allowlisted, anonymously public reports; existing STAMP references/status, redaction, commitment mismatch rejection and report deduplication. | `/judge/planet` |
+
+Both reuse Twitch authorization and signed EventSub ingress. Their state,
+counters, identities and streams are separate. `/editorial` is a read-only
+Pinche Tulum LIVE presentation with Alejandro Barakat, not a video publisher.
+The source is implemented and tested with mocked providers; current live Twitch
+activation and authenticated public-report retrieval are not established by that
+test suite. Existing ecosystem wallets, STAMP and rewards are not rebuilt here.
 
 Safety:
 - No production modifications
@@ -21,25 +34,47 @@ Safety:
 
 ## Local development
 
-Requires Node.js 22 or newer. No third-party dependencies are needed.
+Requires Node.js 22 or newer and npm. The sole runtime dependency is exact-pinned
+chess.js@1.4.0 with a committed lockfile. See [chess session](docs/CHESS_SESSION.md).
 
 ```sh
+npm ci --ignore-scripts
 npm run check
 npm test
-node --env-file=.env src/server.js
+npm audit
+git diff --check
 ```
 
-Copy `.env.example` to `.env` and supply a local demo token for simulation.
-The bridge listens on `127.0.0.1:8766`; open `/overlay` for SSE updates.
-Demo events remain labeled and never create STAMP records or AGRO payments.
+The standalone simulations below need no `.env`, production credentials or Twitch
+connection. All new capabilities default disabled; flags apply only to the process
+in that command. Tests use fake providers, temporary repository-local storage,
+ephemeral loopback listeners and child processes. A restrictive sandbox must allow
+those test operations; EPERM is an environment restriction, not a passing test.
+
+For a separately authorized bridge setup, create a private `.env` from
+`.env.example` and load it with `node --env-file=.env src/server.js`. Never overwrite
+an existing environment file. The bridge binds `127.0.0.1:8766` by default; it does
+not start on installation or during a clone. `/overlay` is the legacy viewer.
+Simulations never create STAMP records or AGRO payments. Generated state is ignored.
+
+| Flag | Default | Scope |
+| --- | --- | --- |
+| `CHESS_SESSION_ENABLED` | `false` | Authoritative chess session; local chess simulator also requires it. |
+| `AGRO_PLANET_REPORTS_ENABLED` | `false` | Real read-only public-report ingestion, requiring private policy/session and payment kill switch. |
+| `JUDGE_DEMOS_ENABLED` | `false` | Two judge pages, their snapshots/SSE and editorial presentation. |
+| `PLANET_DEMO_ENABLED` | `false` | Local judge simulator only; synthetic participation/reports, separate from live reports. |
+| `TWITCH_EVENTS_ENABLED` | `false` | Signed Twitch ingress; separate authorization and subscription activation. |
+| `TWITCH_TOKEN_REFRESH_ENABLED` | `false` | Optional ongoing user-token refresh. |
+| `AGRO_REAL_PAYMENTS_ENABLED` | `false` | Must remain false for these demos; no issuance adapters are invoked. |
 
 ## Existing ecosystem integration
 
 The bridge now includes AgroWallet, AgroCeans, STAMP and AgroCoin adapter
 ports, durable reward state, idempotency, limits, verified Twitch ingress,
 and an overlay displaying verified action references and transaction status.
-Live payments are disabled by default. Production clients and API details
-are not present in this repository; no real connectivity is claimed.
+Live payments are disabled by default. Financial adapter interfaces do not establish
+a production payout integration. Read-only explorer/report clients are implemented
+separately; original ecosystem capabilities remain in the original environment.
 
 See [integration contracts, recovery procedures, activation blockers and deployment checklist](docs/INTEGRATION.md).
 Do not activate payments before implementing and validating those contracts.
@@ -90,9 +125,10 @@ in ignored `var/twitch-oauth/credentials.json` (`0600`) within a private directo
 provider errors are never returned or logged. Keep this directory excluded from
 public static hosting and shared backups. Each successful connection replaces
 the previous credentials. OAuth does not enable EventSub subscriptions, chat,
-rewards or payments; `/health` continues to report chat as disconnected.
-Token refresh and Twitch-required periodic token validation must be implemented
-before using these credentials for an ongoing API session.
+rewards or payments by itself. Ongoing token loading/validation, separately enabled
+refresh and subscription lifecycle management now exist in `src/twitch-client.js`
+and `src/twitch-chat.js`; see [EventSub implementation](docs/TWITCH_CHAT_ACTIVATION.md).
+`/health` reports observed subscription/credential state, not proof of video broadcast.
 
 Remaining deployment work: review scopes and secrets, verify existing proxy
 access logs omit callback query strings (authorization codes), verify the
@@ -142,3 +178,46 @@ automatic refresh additionally requires `TWITCH_TOKEN_REFRESH_ENABLED=true`.
 
 See [security boundaries, tests and exact separately authorized activation steps](docs/TWITCH_CHAT_ACTIVATION.md).
 No deployment, PM2 restart, environment edit or live registration was performed.
+
+## Standalone Pinche Chess browser demo (Stage 3)
+
+See [routes, source labels, limits and local simulation](docs/CHESS_BROWSER_DEMO.md).
+The main bridge serves `/chess`, `/chess/snapshot` and `/chess/events`. Chess is
+disabled by default. Its events/snapshots are isolated from planet `/events`.
+
+For an explicitly simulated local viewer, without Twitch credentials:
+
+```sh
+CHESS_SESSION_ENABLED=true PORT=8877 npm run demo:chess
+```
+
+Open `http://127.0.0.1:8877/chess` and enter UCI moves such as `e2e4`, `e7e5` in
+the terminal. The page remains read-only. This command uses separate simulation
+storage and changes no deployed environment. No local demo process is started
+by these source changes.
+
+## AgroCeans public environmental reports (Stage 4)
+
+See [verified source contracts and read-only ingestion](docs/PLANET_REPORTS.md).
+Stage 4 is disabled by default. It requires an operator-approved folio/post policy,
+an anonymous public-publication check, an authorized Matrix tracking session and
+the payment kill switch. `POST /planet/refresh` requires operator authentication;
+`GET /planet/snapshot` and `/planet/events` publish only redacted observations.
+Existing !ocean participation remains unchanged. No STAMP or AGRO is issued.
+
+## Two judge demos and editorial desk (Stage 5)
+
+All new routes default disabled. See [judge demos and exact local commands](docs/JUDGE_DEMOS.md).
+An isolated simulation for all three pages requires no Twitch credentials:
+
+```sh
+JUDGE_DEMOS_ENABLED=true CHESS_SESSION_ENABLED=true PLANET_DEMO_ENABLED=true PORT=8878 npm run demo:judges
+```
+
+- Pinche Chess: `http://127.0.0.1:8878/judge/chess`
+- AgroCeans: `http://127.0.0.1:8878/judge/planet`
+- Pinche Tulum LIVE with Alejandro Barakat: `http://127.0.0.1:8878/editorial`
+
+Terminal inputs: `chess e2e4`, `chess e7e5`, `planet !ocean viewer1`,
+`planet report sample1`. Reports are explicitly synthetic and have no STAMP.
+The browser is read-only. No local process is started by these source changes.

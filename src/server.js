@@ -5,10 +5,18 @@ const crypto = require('node:crypto');
 
 const { createTwitchOAuth } = require('./twitch-oauth');
 const { RewardEngine } = require('./integration');
-const { AgroExplorerClient, MatrixReportsClient, EcosystemReader } = require('./ecosystem');
+const { AgroExplorerClient, EcosystemReader } = require('./ecosystem');
+const { createPlanetReports } = require('./planet-reports');
+const { createPlanetFeed } = require('./planet-feed');
 const { createTwitchChat, eventSubHandler } = require('./twitch-chat');
-function createBridge({ env = process.env, twitchFactory = createTwitchChat } = {}) {
+const { createChessDemo } = require('./chess-demo');
+const { createJudgeDemos } = require('./judge-demos');
+function createBridge({ env = process.env, twitchFactory = createTwitchChat, chessDemoOptions = {}, planetReportsFactory = createPlanetReports } = {}) {
   const clients = new Set();
+  let chessDemo;
+  let planetFeed;
+  let judgeDemos;
+  let ecosystemSnapshot = null;
 
   let stats = {
     participants: 0,
@@ -18,6 +26,12 @@ function createBridge({ env = process.env, twitchFactory = createTwitchChat } = 
   };
 
   function broadcast(event) {
+    chessDemo?.publish(event);
+    planetFeed?.publish(event);
+    judgeDemos?.publish(event);
+    if (event.type === 'planet.unavailable' && ecosystemSnapshot) ecosystemSnapshot = { ...ecosystemSnapshot, reports: [], transactions: [] };
+    if (event.type?.startsWith('planet.')) return;
+    if (event.domain === 'chess' || event.type?.startsWith('chess.')) return;
     const payload = `data: ${JSON.stringify(event)}\n\n`;
 
     for (const client of clients) {
@@ -26,17 +40,32 @@ function createBridge({ env = process.env, twitchFactory = createTwitchChat } = 
   }
 
   const list = value => (value || '').split(',').map(x => x.trim()).filter(Boolean);
-  let ecosystemSnapshot = null;
   let refreshPending = null;
+  const planetReports = planetReportsFactory({ env, publish: broadcast });
   const reader = env.AGRO_EXPLORER_URL ? new EcosystemReader({
     explorer: new AgroExplorerClient(env.AGRO_EXPLORER_URL),
-    reports: env.AGRO_MATRIX_SESSION_COOKIE && env.AGRO_MATRIX_URL
-      ? new MatrixReportsClient(env.AGRO_MATRIX_URL, env.AGRO_MATRIX_SESSION_COOKIE) : null,
+    // Tracking alone includes private reports. Only the public-gated Stage 4
+    // reader may supply reports to the legacy ecosystem view.
+    reports: planetReports ? { tracking: async () => (await planetReports.refresh()).reports } : null,
     folios: list(env.AGRO_PUBLIC_REPORT_FOLIOS),
     transactionIds: list(env.AGRO_PUBLIC_TRANSACTION_IDS)
   }) : null;
   const twitchChat = env.TWITCH_EVENTS_ENABLED === 'true' ? twitchFactory({ env, publish: broadcast }) : null;
+  chessDemo = createChessDemo({
+    snapshot: () => env.CHESS_SESSION_ENABLED === 'true' ? twitchChat?.chessSnapshot?.() : null,
+    health: () => twitchChat?.health() || { twitchConnected: false, twitchSubscriptionStatus: 'disabled' },
+    ...chessDemoOptions
+  });
   const twitchIngress = eventSubHandler(twitchChat);
+  planetFeed = createPlanetFeed({ reports: planetReports, authorize: authenticated,
+    participation: () => twitchChat ? twitchChat.snapshot() : { commands: 0, uniqueParticipants: 0, lastEventAt: null },
+    health: () => {
+      const value = twitchChat?.health();
+      return { connected: value?.twitchConnected === true, subscription: value?.twitchSubscriptionStatus || 'disabled' };
+    }
+  });
+  judgeDemos = createJudgeDemos({ enabled: env.JUDGE_DEMOS_ENABLED === 'true',
+    chess: () => chessDemo.snapshot(), planet: () => planetFeed.snapshot() });
   let engine;
   let integrationClients;
   if (env.AGRO_INTEGRATION_MODULE) {
@@ -73,6 +102,9 @@ function createBridge({ env = process.env, twitchFactory = createTwitchChat } = 
     const url = new URL(req.url, `http://${req.headers.host}`);
 
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    if (chessDemo.handle(req, res, url)) return;
+    if (judgeDemos.handle(req, res, url)) return;
+    if (await planetFeed.handle(req, res, url)) return;
     if (await twitchOAuth(req, res, url)) return;
     if (await twitchIngress(req, res, url)) return;
     if (url.pathname === '/integration/refresh' && req.method === 'POST') {
@@ -124,7 +156,9 @@ function createBridge({ env = process.env, twitchFactory = createTwitchChat } = 
 
     if (url.pathname === '/events') {
       let liveTwitch;
-      try { liveTwitch = twitchChat ? twitchChat.snapshot() : { commands: 0, uniqueParticipants: 0, lastEventAt: null }; }
+      try {
+        liveTwitch = twitchChat ? twitchChat.snapshot() : { commands: 0, uniqueParticipants: 0, lastEventAt: null };
+      }
       catch { res.writeHead(503); return res.end('Twitch snapshot temporarily unavailable'); }
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
@@ -191,7 +225,7 @@ function createBridge({ env = process.env, twitchFactory = createTwitchChat } = 
   server.headersTimeout = 10000;
   server.on('listening', () => twitchChat?.start());
 
-  server.on('close', () => twitchChat?.stop());
+  server.on('close', () => { twitchChat?.stop(); chessDemo.close(); planetFeed.close(); judgeDemos.close(); });
   return server;
 }
 

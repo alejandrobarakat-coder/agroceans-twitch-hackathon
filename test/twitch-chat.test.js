@@ -7,6 +7,7 @@ const crypto = require('node:crypto');
 const { TwitchStorage, TwitchFault } = require('../src/twitch-storage');
 const { TwitchClient, TwitchTokens, REQUIRED } = require('../src/twitch-client');
 const { TwitchChat, createTwitchChat, CALLBACK } = require('../src/twitch-chat');
+const { ChessSession } = require('../src/chess-session');
 const { run } = require('../scripts/twitch-eventsub');
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 function fixture(t, options = {}) {
@@ -111,6 +112,106 @@ test('commands publish safe participation only, with durable logical/delivery an
   await restarted.reconcile(); assert.equal(restarted.health().twitchConnected, true);
   assert.equal(restarted.receive(command).status, 204); assert.equal(restarted.snapshot().commands, 3);
   assert.equal(fs.readFileSync(f.credentialsFile, 'utf8'), f.original);
+});
+
+test('signed domain routing serializes retries, survives restart and never invokes financial adapters', async t => {
+  const f = fixture(t); await f.ready();
+  const integration = require('../src/integration');
+  const restores = []; let financialCalls = 0;
+  for (const Class of Object.values(integration)) {
+    for (const name of Object.getOwnPropertyNames(Class.prototype).filter(name => name !== 'constructor')) {
+      const original = Class.prototype[name];
+      Class.prototype[name] = () => { financialCalls++; throw Error('financial tripwire'); };
+      restores.push(() => { Class.prototype[name] = original; });
+    }
+  }
+  try {
+    const request = f.message('!move e2e4', 'chess-one');
+    await Promise.all(Array.from({ length: 20 }, () => Promise.resolve().then(() => f.chat.receive(request))));
+    f.chat.receive(f.message('!move e2e4', 'chess-one')); // different delivery, same logical ID
+    f.chat.receive(f.message('!move e2e9', 'invalid'));
+    f.chat.receive(f.message('!ocean', 'planet-one'));
+    const state = () => f.storage.transaction(() => f.storage.read('chat-state.json'));
+    assert.equal(state().commandDomains.chess.commands, 1);
+    assert.equal(state().commandDomains.planet.commands, 1);
+    assert.equal(f.chat.snapshot().commands, 1);
+    assert.deepEqual(f.published.map(event => event.type), ['chess.command', 'twitch_participation']);
+    assert.equal(f.published[1].eventType, 'planet.command');
+    const before = JSON.stringify(state());
+    assert.throws(() => f.chat.receive(f.message('!move e2e4', 'foreign', { broadcaster_user_id: '999' })));
+    assert.throws(() => f.chat.receive(f.message('!ocean', 'shared', { source_broadcaster_user_id: '999' })));
+    assert.equal(JSON.stringify(state()), before);
+    const restarted = f.makeChat(); await restarted.reconcile();
+    restarted.receive(request);
+    assert.equal(state().commandDomains.chess.commands, 1);
+    assert.equal(f.published.length, 2);
+    assert.doesNotMatch(JSON.stringify(f.published), /channelId|participantId|chatter_user_id|fixture-secret|fixture-user-token/);
+    assert.equal(financialCalls, 0);
+  } finally { restores.forEach(restore => restore()); }
+});
+
+test('legacy planet deduplication survives routing upgrade without resetting counters', async t => {
+  const f = fixture(t); await f.ready();
+  f.chat.receive(f.message('!ocean', 'legacy'));
+  f.storage.transaction(() => { const s = f.storage.read('chat-state.json'); delete s.commandDomains; f.storage.write('chat-state.json', s); });
+  f.chat.receive(f.message('!ocean', 'legacy'));
+  f.chat.receive(f.message('!move e2e4', 'new-chess'));
+  assert.equal(f.chat.snapshot().commands, 1);
+  assert.equal(f.published.filter(event => event.type === 'twitch_participation').length, 1);
+  assert.equal(f.published.filter(event => event.type === 'chess.command').length, 1);
+});
+
+test('authoritative chess ingress isolates planet state and trips no financial adapter', async t => {
+  const f = fixture(t); await f.ready();
+  const directory = path.join(f.root, 'chess');
+  f.chat.chessSession = new ChessSession({ directory, broadcasterId: '123' });
+  const restores = []; let financialCalls = 0;
+  for (const Class of Object.values(require('../src/integration'))) {
+    for (const name of Object.getOwnPropertyNames(Class.prototype).filter(name => name !== 'constructor')) {
+      const original = Class.prototype[name];
+      Class.prototype[name] = () => { financialCalls++; throw Error('financial tripwire'); };
+      restores.push(() => { Class.prototype[name] = original; });
+    }
+  }
+  try {
+    f.chat.receive(f.message('!ocean', 'planet'));
+    const planetBefore = f.chat.snapshot();
+    const routingBefore = f.storage.transaction(() => f.storage.read('chat-state.json').commandDomains);
+    f.chat.receive(f.message('!move e2e5', 'illegal-chess'));
+    const valid = f.message('!move e2e4', 'legal-chess');
+    f.chat.receive(valid); f.chat.receive(valid);
+    f.chat.receive(f.message('!move e2e4', 'legal-chess')); // logical retry in new delivery
+    assert.deepEqual(f.chat.snapshot(), planetBefore);
+    assert.deepEqual(f.storage.transaction(() => f.storage.read('chat-state.json').commandDomains), routingBefore);
+    assert.equal(f.chat.chessSnapshot().commands, 2); assert.equal(f.chat.chessSnapshot().ply, 1);
+    assert.deepEqual(f.published.map(event => event.type), ['twitch_participation', 'chess.rejected', 'chess.move']);
+    const chessBefore = fs.readFileSync(path.join(directory, 'session.json'), 'utf8');
+    f.chat.receive(f.message('!ocean', 'planet-two'));
+    assert.equal(fs.readFileSync(path.join(directory, 'session.json'), 'utf8'), chessBefore);
+    assert.throws(() => f.chat.receive(f.message('!move e7e5', 'foreign', { broadcaster_user_id: '999' })));
+    assert.equal(fs.readFileSync(path.join(directory, 'session.json'), 'utf8'), chessBefore);
+    const restarted = f.makeChat();
+    restarted.chessSession = new ChessSession({ directory, broadcasterId: '123' });
+    await restarted.reconcile(); restarted.receive(valid);
+    assert.equal(restarted.chessSnapshot().ply, 1);
+    assert.equal(financialCalls, 0);
+    assert.doesNotMatch(JSON.stringify(f.published), /participantId|channelId|address|rewardUnits|fixture-secret/);
+  } finally { restores.forEach(restore => restore()); }
+});
+
+test('chess commit before failed chat acknowledgement recovers without a second move', async t => {
+  const f = fixture(t); await f.ready();
+  f.chat.chessSession = new ChessSession({ directory: path.join(f.root, 'chess'), broadcasterId: '123' });
+  const request = f.message('!move e2e4', 'crash-gap');
+  const write = f.storage.write;
+  f.storage.write = () => { throw Error('injected chat write failure'); };
+  assert.throws(() => f.chat.receive(request), /injected chat write failure/);
+  f.storage.write = write;
+  assert.equal(f.chat.chessSnapshot().ply, 1);
+  assert.equal(f.chat.receive(request).status, 204);
+  assert.equal(f.chat.chessSnapshot().ply, 1);
+  assert.equal(f.chat.chessSnapshot().commands, 1);
+  assert.equal(f.published.length, 0); // committed snapshot is recovery authority
 });
 
 test('strict HMAC, freshness, reader, channel, transport and subscription checks remain enforced', async t => {
@@ -221,8 +322,9 @@ test('chat activation requires explicit payment kill switch and matching broadca
 
 test('mocked HTTP registration challenge, concurrent webhook retries and SSE snapshot recovery', async t => {
   const f = fixture(t); const emitted = f.published;
+  f.chat.chessSession = new ChessSession({ directory: path.join(f.root, 'chess'), broadcasterId: '123' });
   const { createBridge } = require('../src/server');
-  const server = createBridge({ env: { TWITCH_EVENTS_ENABLED: 'true', AGRO_REAL_PAYMENTS_ENABLED: 'false' },
+  const server = createBridge({ env: { TWITCH_EVENTS_ENABLED: 'true', CHESS_SESSION_ENABLED: 'true', AGRO_REAL_PAYMENTS_ENABLED: 'false' },
     twitchFactory: ({ publish }) => {
       f.chat.publish = event => { emitted.push(event); publish(event); };
       return f.chat;
@@ -244,11 +346,21 @@ test('mocked HTTP registration challenge, concurrent webhook retries and SSE sna
   const event = new TextDecoder().decode((await reader.read()).value);
   assert.match(event, /twitch_participation/); assert.match(event, /"commands":1/);
   assert.doesNotMatch(event, /fixture-user-token|fixture-secret|fixture-refresh-token/);
+  const chessRequest = f.message('!move e2e4', 'http-chess');
+  const chessReplies = await Promise.all(Array.from({ length: 10 }, () => send(chessRequest)));
+  assert.ok(chessReplies.every(response => response.status === 204));
+  assert.equal(emitted.filter(event => event.type === 'chess.move').length, 1);
+  assert.equal(f.chat.snapshot().commands, 1); // chess does not increment planet counters
   const health = await (await fetch(base + '/health')).json(); assert.equal(health.realPaymentsEnabled, false); assert.equal(health.twitchConnected, true);
   const bad = { ...request, headers: { ...request.headers, 'twitch-eventsub-message-signature': 'bad' } };
   assert.equal((await send(bad)).status, 403);
   assert.equal((await fetch(base + '/twitch/eventsub')).status, 405);
   await reader.cancel();
+  const recoveredStream = await fetch(base + '/events');
+  const recoveredReader = recoveredStream.body.getReader();
+  const recoveredSnapshot = new TextDecoder().decode((await recoveredReader.read()).value);
+  assert.doesNotMatch(recoveredSnapshot, /chess\.|"chess"|1\. e4/);
+  await recoveredReader.cancel();
   const restart = f.makeChat(); assert.equal(restart.snapshot().commands, 1); assert.equal(restart.health().twitchConnected, false);
   const release = f.storage.lease('state');
   assert.equal((await fetch(base + '/events')).status, 503); release();
@@ -387,8 +499,12 @@ test('overlay consumes live snapshots without mixing simulation counts or exposi
   const elements = new Map();
   function element() { return { textContent: '', children: [], prepend(value) { this.children.unshift(value); }, append(value) { this.children.push(value); }, replaceChildren() { this.children = []; } }; }
   const document = { getElementById(id) { if (!elements.has(id)) elements.set(id, element()); return elements.get(id); }, createElement: element };
-  let source;
-  const EventSource = function (url) { assert.equal(url, '/events'); source = this; };
+  let source, planet;
+  const EventSource = function (url) {
+    assert.ok(['/events', '/planet/events'].includes(url));
+    if (url === '/events') source = this; else planet = this;
+    this.listeners = {}; this.addEventListener = (name, callback) => { this.listeners[name] = callback; };
+  };
   const html = fs.readFileSync(path.join(__dirname, '../public/overlay.html'), 'utf8');
   vm.runInNewContext(html.match(/<script>([\s\S]*?)<\/script>/)[1], { document, EventSource });
   source.onmessage({ data: JSON.stringify({ type: 'snapshot', stats: { participants: 99 }, liveTwitch: { commands: 3, uniqueParticipants: 2 }, twitchStatus: { twitchConnected: true, twitchSubscriptionStatus: 'enabled' } }) });
@@ -400,4 +516,11 @@ test('overlay consumes live snapshots without mixing simulation counts or exposi
   assert.equal(elements.get('liveCommands').textContent, 4); assert.match(elements.get('activity').children[0].textContent, /no payout/);
   source.onmessage({ data: JSON.stringify({ type: 'twitch_revoked' }) });
   assert.equal(elements.get('twitchStatus').textContent, 'Twitch subscription revoked');
+  planet.listeners.snapshot({ data: JSON.stringify({ status: 'ready', reports: [{ folio: 'public <script>', stamp: null }] }) });
+  assert.match(elements.get('realReports').children[1].textContent, /public <script>.*not available/);
+  assert.equal(elements.get('liveCommands').textContent, 4);
+  planet.listeners.report({ data: JSON.stringify({ status: 'ready', reports: [{ folio: 'public', stamp: { status: 'confirmed', reference: 'stamp:existing', transactionId: 'existing-tx', verification: 'service-reported' } }] }) });
+  assert.match(elements.get('realReports').children[1].textContent, /stamp:existing.*existing-tx.*service-reported/);
+  planet.listeners.snapshot({ data: JSON.stringify({ status: 'unavailable', reports: [] }) });
+  assert.equal(elements.get('realReports').children.length, 1);
 });

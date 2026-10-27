@@ -1,3 +1,8 @@
+> Historical assessment: implementation descriptions below may predate the current
+> source. See [current architecture](ARCHITECTURE.md) and
+> [EventSub implementation](TWITCH_CHAT_ACTIVATION.md). Historical observations
+> do not establish current deployment or connectivity.
+
 # Verified existing-service connections
 
 Reviewed and tested 2026-10-25. Changes are confined to this repository. Production source was inspected read-only; no credentials, private keys, wallet databases or private report records were opened. No worker was executed, webhook subscription created, transaction submitted, service restarted or deployment made.

@@ -60,8 +60,12 @@ for notifications. Full callback/transport/reader/broadcaster identity, raw-body
 HMAC, constant-time signature comparison and five-minute timestamp freshness are
 enforced. Revocation is durable and cannot be undone by a delayed list response.
 
-Only trimmed, case-insensitive exact !ocean is a participation command. Other text
-is discarded; foreign shared-chat source channels are rejected. The dedicated
+Trimmed, case-insensitive exact !ocean retains its participation behavior.
+The router also accepts syntactically valid !move <uci>. With chess disabled it
+emits chess.command only; CHESS_SESSION_ENABLED=true enables the isolated Stage 2
+legal session and chess.move/chess.rejected outcomes. See [chess session](CHESS_SESSION.md)
+and [judge demos](JUDGE_DEMOS.md). No stage here activates a deployed service.
+Other text is discarded; foreign shared-chat source channels are rejected. The dedicated
 Twitch state store persists counters, hashed participant/message IDs and delivery
 replay records in one atomic transaction before SSE publication/acknowledgement.
 It has no financial adapter dependencies and never calls reward(), STAMP or any

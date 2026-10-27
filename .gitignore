@@ -7,3 +7,18 @@ node_modules/
 *.key
 *.log
 .DS_Store
+
+# Temporary private fixtures left by an interrupted test run.
+/var-test-*/
+/var-chat-test-*/
+/var-chess-test-*/
+/var-chess-http-*/
+/var-local-chess-*/
+/var-planet-test-*/
+/var-planet-http-*/
+/var-judges-test-*/
+
+# Local package-manager caches and generated coverage.
+/.npm/
+/.npm-*/
+/coverage/

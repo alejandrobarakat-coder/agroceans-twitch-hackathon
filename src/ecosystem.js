@@ -9,7 +9,7 @@ class JsonApi {
   }
   async get(route, headers = {}) {
     const response = await this.fetcher(new URL(route, this.base), { headers: { Accept: 'application/json', ...headers }, redirect: 'error', signal: AbortSignal.timeout(12000) });
-    check(response.ok && /application\/json/i.test(response.headers.get('content-type') || ''), 'API authentication or availability failure');
+    check(response.ok && !response.redirected && /^application\/json(?:\s*;|$)/i.test(response.headers.get('content-type') || ''), 'API authentication or availability failure');
     let size = 0; const chunks = [];
     for await (const bytes of response.body) { size += bytes.length; if (size > 2000000) throw new Error('API response too large'); chunks.push(Buffer.from(bytes)); }
     const value = JSON.parse(Buffer.concat(chunks).toString('utf8'));
@@ -62,7 +62,7 @@ class EcosystemReader {
     if (this.reports) {
       try { snapshot.reports = await this.reports.tracking(this.folios); } catch { snapshot.errors.push('Matrix tracking unavailable; authenticated session and report access required'); }
     }
-    const ids = [...new Set([...this.transactionIds, ...snapshot.reports.flatMap(r => [r.stamp.transactionId, r.reward.transactionId]).filter(Boolean)])];
+    const ids = [...new Set([...this.transactionIds, ...snapshot.reports.flatMap(r => [r.stamp?.transactionId, r.reward?.transactionId]).filter(Boolean)])];
     for (const id of ids.slice(0, 50)) {
       try { snapshot.transactions.push(await this.explorer.transaction(id)); } catch { snapshot.errors.push('A configured transaction could not be verified'); }
     }
