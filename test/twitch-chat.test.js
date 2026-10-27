@@ -83,6 +83,167 @@ function fixture(t, options = {}) {
     async ready() { await chat.register(); assert.equal(chat.health().twitchConnected, false); await chat.reconcile(); assert.equal(chat.health().twitchConnected, true); } };
 }
 
+// Stage 6A uses the production ingress and projections with synthetic credentials,
+// synthetic signed deliveries and a fake Twitch API. Never a live token/session.
+async function readinessBridge(t, f, { restart = false } = {}) {
+  const tokens = restart ? new TwitchTokens({ client: f.client, storage: f.storage, credentialsFile: f.credentialsFile,
+    broadcasterId: '123', readerId: '123', now: f.now }) : f.tokens;
+  const chat = restart ? new TwitchChat({ client: f.client, tokens, storage: f.storage, broadcasterId: '123', readerId: '123', now: f.now }) : f.chat;
+  chat.chessSession = new ChessSession({ directory: path.join(f.root, 'chess'), broadcasterId: '123' });
+  if (restart) assert.equal(chat.health().twitchConnected, false);
+  const { createBridge } = require('../src/server');
+  const server = createBridge({ env: { TWITCH_EVENTS_ENABLED: 'true', CHESS_SESSION_ENABLED: 'true', JUDGE_DEMOS_ENABLED: 'true',
+    AGRO_REAL_PAYMENTS_ENABLED: 'false', TWITCH_TOKEN_REFRESH_ENABLED: 'false' },
+    twitchFactory: ({ publish }) => { chat.publish = publish; return chat; } });
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+  const base = 'http://127.0.0.1:' + server.address().port, controllers = [];
+  let stopped = false;
+  async function stop() {
+    if (stopped) return; stopped = true;
+    controllers.forEach(controller => controller.abort()); chat.stop(); server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+  }
+  t.after(stop);
+  async function send(request) {
+    const response = await fetch(base + '/twitch/eventsub', { method: 'POST', headers: request.headers,
+      body: request.rawBody, signal: AbortSignal.timeout(5000) });
+    return { status: response.status, body: await response.text() };
+  }
+  const creates = () => f.calls.filter(call => call.url.includes('/helix/') && call.method === 'POST').length;
+  const before = creates(); await chat.maintain(); assert.equal(creates(), before); // startup never registers
+  f.config.challengeHttp = send;
+  if (!restart) await f.ready();
+  async function get(route) {
+    const response = await fetch(base + route, { signal: AbortSignal.timeout(5000) });
+    assert.equal(response.status, 200); return response.json();
+  }
+  async function events(route) {
+    const controller = new AbortController(); controllers.push(controller);
+    const response = await fetch(base + route, { signal: controller.signal, headers: { 'Last-Event-ID': 'synthetic-stale-cursor' } });
+    assert.equal(response.status, 200); assert.equal(response.headers.get('x-accel-buffering'), 'no');
+    const reader = response.body.getReader(), decoder = new TextDecoder(); let buffer = '';
+    return { close: () => controller.abort(), async next() {
+      const timer = setTimeout(() => controller.abort(), 5000);
+      try {
+        while (true) {
+          const i = buffer.indexOf('\n\n');
+          if (i >= 0) {
+            const frame = buffer.slice(0, i); buffer = buffer.slice(i + 2);
+            const data = frame.split('\n').find(line => line.startsWith('data: '));
+            if (data) return { name: frame.split('\n').find(line => line.startsWith('event: '))?.slice(7), data: JSON.parse(data.slice(6)) }; continue;
+          }
+          const part = await reader.read(); if (part.done) throw Error('Synthetic readiness stream ended');
+          buffer += decoder.decode(part.value, { stream: true });
+        }
+      } finally { clearTimeout(timer); }
+    } };
+  }
+  return { chat, tokens, send, get, events, stop };
+}
+
+test('Stage 6A synthetic signed chat reaches BOTH judge SSEs and editorial without financial calls', async t => {
+  const f = fixture(t); const bridge = await readinessBridge(t, f);
+  const restores = []; let financialCalls = 0;
+  for (const Class of Object.values(require('../src/integration'))) {
+    for (const name of Object.getOwnPropertyNames(Class.prototype).filter(name => name !== 'constructor')) {
+      const original = Class.prototype[name];
+      Class.prototype[name] = () => { financialCalls++; throw Error('financial tripwire'); };
+      restores.push(() => { Class.prototype[name] = original; });
+    }
+  }
+  try {
+    const chess = await bridge.events('/judge/chess/events'), planet = await bridge.events('/judge/planet/events'), editorial = await bridge.events('/editorial/events');
+    const initialChess = (await chess.next()).data, initialPlanet = (await planet.next()).data;
+    await editorial.next();
+    assert.equal(initialChess.match.ply, 0); assert.equal(initialPlanet.counters.liveCommands, 0);
+    const ocean = f.message('!ocean', 'readiness-ocean');
+    const oceanReplies = await Promise.all(Array.from({ length: 8 }, () => bridge.send(ocean)));
+    assert.ok(oceanReplies.every(reply => reply.status === 204));
+    const p = (await planet.next()).data;
+    assert.equal(p.counters.liveCommands, 1); assert.equal(p.counters.liveParticipants, 1);
+    assert.equal(p.counters.simulatedCommands, 0); assert.equal(p.simulated, false); assert.deepEqual(p.reports, []);
+    assert.equal((await editorial.next()).data.planet.counters.liveCommands, 1);
+    await bridge.send(f.message('!ocean', 'readiness-ocean')); // new delivery, same logical message
+    const white = f.message('!move e2e4', 'readiness-white');
+    const whiteReplies = await Promise.all(Array.from({ length: 8 }, () => bridge.send(white)));
+    assert.ok(whiteReplies.every(reply => reply.status === 204));
+    const c = (await chess.next()).data; // no planet update entered chess SSE
+    assert.equal(c.match.ply, 1); assert.equal(c.match.lastMove.uci, 'e2e4'); assert.equal(c.match.turn, 'b');
+    assert.equal(c.simulated, false); assert.equal(c.source, 'twitch'); assert.equal(c.twitch.connected, true);
+    assert.equal(c.video.status, 'not_observed'); assert.equal((await editorial.next()).data.chess.match.lastMove.uci, 'e2e4');
+    await bridge.send(f.message('!move e2e4', 'readiness-white'));
+    await bridge.send(f.message('!move d2d4', 'readiness-wrong-side'));
+    const rejected = (await chess.next()).data;
+    assert.equal(rejected.match.ply, 1); assert.equal(rejected.counters.acceptedMoves, 1); assert.equal(rejected.counters.commands, 2);
+    await editorial.next();
+    await bridge.send(f.message('!move e7e5', 'readiness-black'));
+    const black = (await chess.next()).data; assert.equal(black.match.ply, 2); assert.equal(black.match.turn, 'w');
+    assert.deepEqual(black.match.history.map(move => move.uci), ['e2e4', 'e7e5']);
+    assert.match(black.match.pgn, /1\. e4 e5/);
+    await editorial.next();
+    const before = await bridge.get('/judge/chess/snapshot');
+    await bridge.send(f.message('hello <script>private-chat</script>', 'readiness-ordinary'));
+    await bridge.send(f.message('!move e2e9', 'readiness-malformed'));
+    assert.deepEqual((await bridge.get('/judge/chess/snapshot')).counters, before.counters);
+    await bridge.send(f.message('!ocean', 'readiness-ocean-two'));
+    assert.equal((await planet.next()).data.counters.liveCommands, 2); // no chess/duplicate update entered planet SSE
+    const desk = await bridge.get('/editorial/snapshot');
+    assert.equal(desk.chess.counters.acceptedMoves, 2); assert.equal(desk.planet.counters.liveCommands, 2);
+    assert.notEqual(desk.chess.identity.id, desk.planet.identity.id);
+    assert.doesNotMatch(JSON.stringify(desk), /fixture-user-token|fixture-secret|fixture-refresh-token|chatter_user|private-chat|rewardUnits|receiver|address/);
+    assert.equal((await bridge.get('/health')).realPaymentsEnabled, false);
+    assert.equal(financialCalls, 0); assert.equal(fs.readFileSync(f.credentialsFile, 'utf8'), f.original);
+  } finally { restores.forEach(restore => restore()); }
+});
+
+test('Stage 6A synthetic HTTP rejects channel/signature/expiry and handles revocation in BOTH judges', async t => {
+  const f = fixture(t); const bridge = await readinessBridge(t, f);
+  const beforeChess = await bridge.get('/judge/chess/snapshot'), beforePlanet = await bridge.get('/judge/planet/snapshot');
+  const valid = f.message('!move e2e4', 'guarded');
+  const badSignature = { ...valid, headers: { ...valid.headers, 'twitch-eventsub-message-signature': 'invalid' } };
+  for (const request of [badSignature,
+    f.message('!move e2e4', 'foreign-chess', { broadcaster_user_id: '999' }),
+    f.message('!ocean', 'foreign-planet', { source_broadcaster_user_id: '999' }),
+    f.message('!ocean', 'old', {}, { 'twitch-eventsub-message-timestamp': new Date(f.now() - 301000).toISOString() })]) {
+    assert.equal((await bridge.send(request)).status, 403);
+  }
+  f.tokens.state.validUntil = f.now() - 1;
+  assert.equal((await bridge.send(f.message('!ocean', 'expired-credentials'))).status, 503);
+  assert.deepEqual((await bridge.get('/judge/chess/snapshot')).counters, beforeChess.counters);
+  assert.deepEqual((await bridge.get('/judge/planet/snapshot')).counters, beforePlanet.counters);
+  await f.chat.reconcile();
+  const revoked = f.signed({ ...f.sub(), status: 'authorization_revoked' }, 'revocation');
+  assert.equal((await bridge.send(revoked)).status, 204);
+  for (const route of ['/judge/chess/snapshot', '/judge/planet/snapshot']) {
+    const value = await bridge.get(route); assert.equal(value.twitch.connected, false); assert.equal(value.twitch.subscription, 'revoked');
+  }
+  assert.equal((await bridge.send(f.message('!move e2e4', 'after-revoke-chess'))).status, 403);
+  assert.equal((await bridge.send(f.message('!ocean', 'after-revoke-planet'))).status, 403);
+});
+
+test('Stage 6A synthetic reconnect and restart revalidate credentials and recover BOTH domains once', async t => {
+  const f = fixture(t); const first = await readinessBridge(t, f);
+  const move = f.message('!move e2e4', 'persistent-white'), ocean = f.message('!ocean', 'persistent-ocean');
+  await first.send(move); await first.send(ocean);
+  const initial = await first.get('/editorial/snapshot'); await first.stop();
+  const second = await readinessBridge(t, f, { restart: true });
+  const recoveredChess = await second.events('/judge/chess/events'), recoveredPlanet = await second.events('/judge/planet/events');
+  const c = (await recoveredChess.next()).data, p = (await recoveredPlanet.next()).data;
+  assert.notEqual(c.instanceId, initial.instanceId); assert.equal(c.match.ply, 1); assert.equal(p.counters.liveCommands, 1);
+  assert.equal(c.twitch.connected, true); assert.equal(p.twitch.connected, true);
+  assert.equal((await second.send(move)).status, 204); assert.equal((await second.send(ocean)).status, 204);
+  await second.send(f.message('!move e2e4', 'persistent-white')); await second.send(f.message('!ocean', 'persistent-ocean'));
+  assert.equal((await second.get('/judge/chess/snapshot')).counters.commands, 1);
+  assert.equal((await second.get('/judge/planet/snapshot')).counters.liveCommands, 1);
+  await second.send(f.message('!move e7e5', 'persistent-black'));
+  assert.equal((await recoveredChess.next()).data.match.ply, 2);
+  await second.send(f.message('!ocean', 'persistent-ocean-two', { chatter_user_id: '789' }));
+  const nextPlanet = (await recoveredPlanet.next()).data;
+  assert.equal(nextPlanet.counters.liveCommands, 2); assert.equal(nextPlanet.counters.liveParticipants, 2);
+  assert.equal(f.calls.filter(call => call.method === 'POST' && call.url.includes('/helix/')).length, 1);
+  assert.equal(fs.readFileSync(f.credentialsFile, 'utf8'), f.original);
+});
+
 test('registration persists pending intent before a signed challenge arriving before API response', async t => {
   const f = fixture(t); await f.ready();
   const record = f.storage.transaction(() => f.storage.read('chat-state.json').registration);

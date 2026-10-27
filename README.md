@@ -221,3 +221,11 @@ JUDGE_DEMOS_ENABLED=true CHESS_SESSION_ENABLED=true PLANET_DEMO_ENABLED=true POR
 Terminal inputs: `chess e2e4`, `chess e7e5`, `planet !ocean viewer1`,
 `planet report sample1`. Reports are explicitly synthetic and have no STAMP.
 The browser is read-only. No local process is started by these source changes.
+
+## Twitch readiness for both projects (Stage 6A)
+
+Run `npm run test:twitch-readiness` for synthetic signed-webhook-to-judge coverage.
+The harness uses fake providers and a clean child environment; it cannot target a
+live receiver. See [readiness findings and later real-chat acceptance commands](docs/TWITCH_LIVE_READINESS.md).
+No runtime activation, token exchange, subscription change or deployment is part
+of this stage.

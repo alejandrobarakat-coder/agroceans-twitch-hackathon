@@ -8,10 +8,11 @@
   "scripts": {
     "start": "node src/server.js",
     "test": "node --test",
-    "check": "node --check src/server.js && node --check src/twitch-oauth.js && node --check src/oauth-bootstrap.js && node --check scripts/oauth-bootstrap.js && node --check src/integration.js && node --check src/ecosystem.js && node --check scripts/verify-readonly.js && node --check src/oauth-pairing.js && node --check scripts/oauth-pairing.js && node --check src/twitch-storage.js && node --check src/twitch-client.js && node --check src/twitch-chat.js && node --check scripts/twitch-eventsub.js && node --check src/command-router.js && node --check src/chess-session.js && node --check src/chess-demo.js && node --check public/chess.js && node --check scripts/chess-demo.js && node --check src/planet-reports.js && node --check src/planet-feed.js && node --check src/judge-demos.js && node --check public/judges.js && node --check scripts/judge-demos.js",
+    "check": "node --check src/server.js && node --check src/twitch-oauth.js && node --check src/oauth-bootstrap.js && node --check scripts/oauth-bootstrap.js && node --check src/integration.js && node --check src/ecosystem.js && node --check scripts/verify-readonly.js && node --check src/oauth-pairing.js && node --check scripts/oauth-pairing.js && node --check src/twitch-storage.js && node --check src/twitch-client.js && node --check src/twitch-chat.js && node --check scripts/twitch-eventsub.js && node --check src/command-router.js && node --check src/chess-session.js && node --check src/chess-demo.js && node --check public/chess.js && node --check scripts/chess-demo.js && node --check src/planet-reports.js && node --check src/planet-feed.js && node --check src/judge-demos.js && node --check public/judges.js && node --check scripts/judge-demos.js && node --check scripts/twitch-readiness.js",
     "verify:readonly": "node scripts/verify-readonly.js",
     "demo:chess": "node scripts/chess-demo.js",
-    "demo:judges": "node scripts/judge-demos.js"
+    "demo:judges": "node scripts/judge-demos.js",
+    "test:twitch-readiness": "node scripts/twitch-readiness.js"
   },
   "dependencies": {
     "chess.js": "1.4.0"
