@@ -13,11 +13,12 @@ function fixture(options = {}) {
     const handled = await handle(Object.assign(require('node:stream').Readable.from([Buffer.from(body)]), { method, headers: { cookie, ...(method === 'POST' ? { origin, 'content-type': 'application/json' } : {}), ...extra } }), res, new URL(route, origin));
     return { ...res, handled };
   }
-  async function begin() {
+  async function begin(nativeState) {
     const device = await req(prefix + 'request', '', 'POST');
     assert.equal(device.status, 200);
     const appCookie = device.headers['Set-Cookie'].split(';')[0];
-    const startUrl = JSON.parse(device.body).authorizeUrl;
+    let startUrl = JSON.parse(device.body).authorizeUrl;
+    if (nativeState) startUrl += '&native=1&native_state=' + nativeState;
     const start = await req(startUrl);
     const state = new URL(start.headers.Location).searchParams.get('state');
     return { appCookie, browserCookie: start.headers['Set-Cookie'].split(';')[0], state, startUrl, start };
@@ -207,4 +208,35 @@ test('chat feed bounds and deduplicates public messages',async()=>{
   await handle({method:'GET',headers:{}},res,new URL(prefix+'messages',origin));
   const rows=JSON.parse(res.body).messages;
   assert.equal(rows.length,100);assert.equal(rows[0].id,'id-50');assert.equal(rows.at(-1).text,'<b>149</b>');
+});
+
+test('native success redirects only after verified authorization and retains the original app session',async()=>{
+  const f=fixture(),nonce='a'.repeat(64),a=await f.begin(nonce);
+  const response=await f.req('/auth/twitch/callback?state='+a.state+'&code=x',a.browserCookie);
+  assert.equal(response.status,302);
+  const target=new URL(response.headers.Location);
+  assert.equal(target.protocol,'agroceanstwitch:');assert.equal(target.host,'callback');
+  assert.equal(target.searchParams.get('state'),nonce);assert.equal(target.searchParams.get('result'),'success');
+  assert.deepEqual([...target.searchParams.keys()].sort(),['result','state']);
+  assert.doesNotMatch(JSON.stringify(response),/private-token|private-refresh|private-code/);
+  assert.equal(JSON.parse((await f.req(prefix+'status',a.appCookie)).body).chatReady,true);
+  assert.equal((await f.req('/auth/twitch/callback?state='+a.state+'&code=x',a.browserCookie)).status,400);
+});
+test('native denial returns an error outcome without granting access; wrong cookie never redirects',async()=>{
+  const f=fixture(),a=await f.begin('b'.repeat(64));
+  const route='/auth/twitch/callback?state='+a.state+'&error=access_denied';
+  const wrong=await f.req(route);
+  assert.equal(wrong.status,400);assert.equal(wrong.headers.Location,undefined);
+  const denied=await f.req(route,a.browserCookie);
+  assert.equal(denied.status,302);assert.equal(new URL(denied.headers.Location).searchParams.get('result'),'error');
+  assert.equal(f.calls.length,0);assert.equal(JSON.parse((await f.req(prefix+'status',a.appCookie)).body).chatReady,false);
+});
+test('native parameters reject duplicates, untrusted redirect URLs and incomplete state',async()=>{
+  const f=fixture();
+  const device=await f.req(prefix+'request','','POST');
+  const url=JSON.parse(device.body).authorizeUrl;
+  for(const suffix of ['&native=1','&native_state='+ 'a'.repeat(64),'&native=2&native_state='+'a'.repeat(64),'&native=1&native=1&native_state='+'a'.repeat(64),'&native=1&native_state='+'a'.repeat(64)+'&redirect_uri=https://evil.test']) {
+    assert.equal((await f.req(url+suffix)).status,400);
+  }
+  assert.equal((await f.req(url+'&native=1&native_state='+'a'.repeat(64))).status,302);
 });

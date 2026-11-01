@@ -151,12 +151,18 @@ function createTwitchUserOAuth({ clientId, clientSecret, broadcasterId, fetchImp
     if (action === 'start' && !isCallback) {
       if (!isUserStart) return reply(400, { error: 'Invalid authorization request' });
       const ticket = url.searchParams.get('user_ticket');
-      if (!valid(ticket) || [...url.searchParams.keys()].length !== 1) return reply(400, { error: 'Invalid authorization request' });
+      const native = url.searchParams.get('native');
+      const nativeState = url.searchParams.get('native_state');
+      const keys = [...url.searchParams.keys()];
+      const nativeRequest = native === '1' && valid(nativeState) && keys.length === 3 &&
+        ['user_ticket', 'native', 'native_state'].every(key => url.searchParams.getAll(key).length === 1);
+      const browserRequest = keys.length === 1 && native === null && nativeState === null;
+      if (!valid(ticket) || (!nativeRequest && !browserRequest)) return reply(400, { error: 'Invalid authorization request' });
       const record = tickets.get(digest(ticket));
       if (!record || !devices.has(record.key)) return reply(400, { error: 'Authorization expired; return to Live' });
       tickets.delete(digest(ticket));
       const binding = random(), state = 'u_' + random();
-      states.set(state, { key: record.key, binding: digest(binding), expires: record.expires });
+      states.set(state, { key: record.key, binding: digest(binding), expires: record.expires, nativeState: nativeRequest ? nativeState : null });
       const target = new URL('https://id.twitch.tv/oauth2/authorize');
       target.search = new URLSearchParams({ client_id: clientId, redirect_uri: CALLBACK, response_type: 'code', scope: CHAT_SCOPE, state, force_verify: 'true' }).toString();
       res.setHeader('Set-Cookie', cookie(BROWSER, binding, TTL / 1000));
@@ -169,7 +175,16 @@ function createTwitchUserOAuth({ clientId, clientSecret, broadcasterId, fetchImp
       res.setHeader('Set-Cookie', cookie(BROWSER, '', 0));
       const target = devices.get(record.key);
       if (!target || target.status !== 'pending') return reply(400, { error: 'Authorization expired' });
-      const fail = () => { target.status = 'failed'; return reply(400, { error: 'Twitch authorization failed; return to Live and retry' }); };
+      const nativeReply = outcome => {
+        const destination = new URL('agroceanstwitch://callback');
+        destination.search = new URLSearchParams({ state: record.nativeState, result: outcome }).toString();
+        res.setHeader('Location', destination.href);
+        return reply(302, { status: 'returning_to_app' });
+      };
+      const fail = () => {
+        target.status = 'failed';
+        return record.nativeState ? nativeReply('error') : reply(400, { error: 'Twitch authorization failed; return to Live and retry' });
+      };
       const code = url.searchParams.get('code');
       if (url.searchParams.has('error') || url.searchParams.getAll('code').length !== 1 || !code || code.length > 2048) return fail();
       try {
@@ -186,6 +201,7 @@ function createTwitchUserOAuth({ clientId, clientSecret, broadcasterId, fetchImp
         target.expires = now() + SESSION_TTL;
         target.auth = auth;
         remember();
+        if (record.nativeState) return nativeReply('success');
         return reply(200, '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Twitch connected</title><h1>Twitch connected</h1><p>Your account is connected. Close this browser tab to return to Live.</p><p><a href="agroceans://live">Return to AgroCeans</a></p></html>', 'text/html');
       } catch { return fail(); }
     }
