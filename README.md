@@ -1,4 +1,39 @@
-# Pinche Chess and AgroCeans — Twitch integration
+# AgroCeans — Twitch integration
+
+## Hackathon submission — AgroCeans
+
+AgroCeans is our single Codex x TwitchCon hackathon submission.
+Pinche Chess is an integrated experience within AgroCeans, not a separate entry.
+
+AgroCeans brings environmental reports, cleanups, meditation, sport,
+community participation and chess into one mobile experience.
+The existing ecosystem records eligible activities, creates STAMP references
+and processes eligible AGRO rewards through separate services.
+
+Twitch provides the shared live video and conversation layer.
+Users can connect their own Twitch account and send chat messages inside
+AgroCeans, with automatic return after mobile authorization.
+
+### Codex contribution and evidence
+
+Codex assisted implementation, debugging and verification of:
+- Individual Twitch OAuth and private server-side token handling.
+- Chat sending through Twitch's API and verified EventSub chat history.
+- Native iOS and Android authentication return.
+- Android camera and microphone permission handling.
+- Automated tests, deployment scripts and judge documentation.
+
+Validation included 189 server tests with mocked providers, Flutter analysis,
+three authentication-return tests and manual mobile authorization/chat tests.
+These checks do not verify every ecosystem feature or reward flow.
+
+Existing report and chess services have recorded confirmed AGRO payments.
+Wallet persistence across updates and delivery to the currently selected
+wallet remain under investigation. Twitch authorization alone does not
+prove wallet ownership or trigger rewards.
+
+Codex session evidence: the session ID/link still needs to be added.
+
 
 ## Judge access — November 1, 2026
 
@@ -92,9 +127,7 @@ that do not describe the current installation.
 
 Codex x TwitchCon Hackathon 2026
 
-Two distinct submissions share an isolated Twitch bridge: Pinche Chess — Twitch
-Plays Chess, and AgroCeans — Twitch for Planet. Pinche Tulum LIVE and Alejandro
-Barakat provide the editorial broadcast layer.
+Earlier development explored separate Chess and Planet demos. The final submission is one unified AgroCeans project, including Pinche Chess and the shared Twitch experience.
 
 Current judge demos and setup: [Stage 5 guide](docs/JUDGE_DEMOS.md).
 Historical source stages: [architecture and routing](docs/ARCHITECTURE.md).
@@ -103,9 +136,9 @@ deployment evidence. The existing AgroCeans wallets, rewards and STAMP work in
 the original ecosystem; pending items here concern hackathon bridge integration.
 SSE carries application events; actual Twitch video requires a broadcaster.
 
-## Two distinct projects
+## Historical component demos — one final AgroCeans submission
 
-| Submission | Implemented hackathon behavior | Distinct judge view |
+| Component | Implemented demo behavior | Component judge view |
 | --- | --- | --- |
 | **Pinche Chess — Twitch Plays Chess** | Validated Twitch UCI commands feed an isolated authoritative chess session: legal moves, turn/king safety, special moves, game results, FEN/PGN, history and persistent idempotency. First legal move per turn; no voting. | `/judge/chess` |
 | **AgroCeans — Twitch for Planet** | Exact `!ocean` participation plus authorized read-only ingestion of allowlisted, anonymously public reports; existing STAMP references/status, redaction, commitment mismatch rejection and report deduplication. | `/judge/planet` |
