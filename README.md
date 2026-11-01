@@ -3,14 +3,13 @@
 ## Judge access — November 1, 2026
 
 - [Download Android APK](https://github.com/alejandrobarakat-coder/agroceans/releases/download/v1.0.0-20261103/app-release.apk)
-- [Open Live in a browser](https://twitch.theagrostore.com/pinche-live)
 - [Android release details](https://github.com/alejandrobarakat-coder/agroceans/releases/tag/v1.0.0-20261103)
 - iOS: build 5 tested internally; external TestFlight review pending.
   A public invitation will be added after approval.
 
 ### Quick test
 
-1. Install the Android APK or open the browser link.
+1. Install the Android APK.
 2. Open Live and select Connect Twitch.
 3. Authorize your Twitch account. The mobile app returns automatically to Live.
 4. Send a chat message and verify it on the Twitch channel.
