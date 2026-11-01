@@ -1,5 +1,40 @@
 # Pinche Chess and AgroCeans — Twitch integration
 
+## Judge access — November 1, 2026
+
+- [Download Android APK](https://github.com/alejandrobarakat-coder/agroceans/releases/download/v1.0.0-20261103/app-release.apk)
+- [Open Live in a browser](https://twitch.theagrostore.com/pinche-live)
+- [Android release details](https://github.com/alejandrobarakat-coder/agroceans/releases/tag/v1.0.0-20261103)
+- iOS: build 5 tested internally; external TestFlight review pending.
+  A public invitation will be added after approval.
+
+### Quick test
+
+1. Install the Android APK or open the browser link.
+2. Open Live and select Connect Twitch.
+3. Authorize your Twitch account. The mobile app returns automatically to Live.
+4. Send a chat message and verify it on the Twitch channel.
+5. Reopen Live to check the remembered connection.
+
+The video depends on the broadcaster being online.
+Twitch authorization does not link a wallet or trigger an AGRO payment.
+Use a test wallet: wallet persistence across updates is under investigation.
+Do not deposit funds for this evaluation.
+
+### Built with Codex
+
+Codex assisted implementation and debugging of individual Twitch OAuth,
+server-side chat sending, verified EventSub chat history, native iOS and
+Android authentication return, and Android camera/microphone permission handling.
+
+Validation included 189 server tests using mocked providers, Flutter analysis,
+three authentication-return tests, signed mobile builds, and manual account
+authorization and chat tests on Android and iPhone.
+
+Camera/microphone permission support does not by itself establish a broadcast
+pipeline to Twitch. Historical development notes below describe earlier stages.
+
+
 ## Current Agroland Live implementation
 
 Embedded Twitch video, individual account authorization and one chat composer.
@@ -46,7 +81,7 @@ Reopen Live to verify the remembered session.
 Mobile source:
 https://github.com/alejandrobarakat-coder/agroceans
 
-Verification: 186 automated tests passed with mocked providers.
+Verification: 189 automated tests passed with mocked providers.
 Android user testing confirmed authorization and message sending.
 This does not establish hackathon submission status.
 
