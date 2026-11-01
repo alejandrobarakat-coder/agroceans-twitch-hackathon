@@ -4,6 +4,8 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 
 const { createTwitchOAuth } = require('./twitch-oauth');
+const { createTwitchUserOAuth } = require('./twitch-user-oauth');
+const { TwitchStorage } = require('./twitch-storage');
 const { RewardEngine } = require('./integration');
 const { AgroExplorerClient, EcosystemReader } = require('./ecosystem');
 const { createPlanetReports } = require('./planet-reports');
@@ -17,6 +19,7 @@ function createBridge({ env = process.env, twitchFactory = createTwitchChat, che
   let planetFeed;
   let judgeDemos;
   let ecosystemSnapshot = null;
+  let twitchUserOAuth;
 
   let stats = {
     participants: 0,
@@ -50,7 +53,7 @@ function createBridge({ env = process.env, twitchFactory = createTwitchChat, che
     folios: list(env.AGRO_PUBLIC_REPORT_FOLIOS),
     transactionIds: list(env.AGRO_PUBLIC_TRANSACTION_IDS)
   }) : null;
-  const twitchChat = env.TWITCH_EVENTS_ENABLED === 'true' ? twitchFactory({ env, publish: broadcast }) : null;
+  const twitchChat = env.TWITCH_EVENTS_ENABLED === 'true' ? twitchFactory({ env, publish: broadcast, observeChat: message => twitchUserOAuth?.observeChat(message) }) : null;
   chessDemo = createChessDemo({
     snapshot: () => env.CHESS_SESSION_ENABLED === 'true' ? twitchChat?.chessSnapshot?.() : null,
     health: () => twitchChat?.health() || { twitchConnected: false, twitchSubscriptionStatus: 'disabled' },
@@ -87,6 +90,11 @@ function createBridge({ env = process.env, twitchFactory = createTwitchChat, che
     return expected && expected.length >= 32 && Buffer.byteLength(actual) === Buffer.byteLength('Bearer ' + expected) &&
       crypto.timingSafeEqual(Buffer.from(actual), Buffer.from('Bearer ' + expected));
   }
+  twitchUserOAuth = createTwitchUserOAuth({
+    storage: new TwitchStorage(path.resolve(__dirname, '../var/twitch-user-identities')),
+    broadcasterId: env.TWITCH_BROADCASTER_ID,
+    clientId: env.TWITCH_CLIENT_ID, clientSecret: env.TWITCH_CLIENT_SECRET
+  });
   const twitchOAuth = createTwitchOAuth({
     clientId: env.TWITCH_CLIENT_ID, clientSecret: env.TWITCH_CLIENT_SECRET,
     scopes: env.TWITCH_OAUTH_SCOPES || '', authorize: authenticated,
@@ -105,6 +113,74 @@ function createBridge({ env = process.env, twitchFactory = createTwitchChat, che
     if (chessDemo.handle(req, res, url)) return;
     if (judgeDemos.handle(req, res, url)) return;
     if (await planetFeed.handle(req, res, url)) return;
+
+    if (url.pathname === '/planet/chain-proofs') {
+      if (req.method !== 'GET') {
+        res.writeHead(405, { Allow: 'GET' });
+        return res.end('Method not allowed');
+      }
+      try {
+        const policy = JSON.parse(fs.readFileSync(
+          path.join(__dirname, '../var/planet-policy/approved-reports.json'), 'utf8'));
+        const proof = JSON.parse(fs.readFileSync(
+          path.join(__dirname, '../var/planet-policy/confirmed-chain-proofs.json'), 'utf8'));
+
+        if (proof.schema !== 'agroceans.public-chain-proof.v1' ||
+            proof.simulated !== false ||
+            !Array.isArray(proof.reports) ||
+            !Array.isArray(policy.reports)) throw Error('Invalid proof');
+
+        const allowed = new Map(policy.reports.map(r => [r.folio, r.postId]));
+        const tx = x => typeof x === 'string' && /^[a-fA-F0-9]{64}$/.test(x);
+        const valid = x => x &&
+          allowed.has(x.folio) &&
+          allowed.get(x.folio) === x.postId &&
+          x.stamp?.status === 'confirmed' &&
+          x.reward?.status === 'confirmed' &&
+          tx(x.stamp.txid) && tx(x.reward.txid) &&
+          Number.isInteger(x.stamp.confirmations) &&
+          Number.isInteger(x.reward.confirmations) &&
+          x.stamp.confirmations >= 6 &&
+          x.reward.confirmations >= 6;
+
+        const reports = proof.reports.filter(valid).map(x => ({
+          folio: x.folio,
+          postId: x.postId,
+          stamp: {
+            status: 'confirmed',
+            categoryCode: x.stamp.categoryCode,
+            txid: x.stamp.txid,
+            confirmations: x.stamp.confirmations
+          },
+          reward: {
+            status: 'confirmed',
+            txid: x.reward.txid,
+            confirmations: x.reward.confirmations
+          }
+        }));
+
+        res.writeHead(200, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'no-store'
+        });
+        return res.end(JSON.stringify({
+          schema: proof.schema,
+          simulated: false,
+          generatedAt: proof.generatedAt,
+          reports
+        }));
+      } catch {
+        res.writeHead(503, {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store'
+        });
+        return res.end(JSON.stringify({
+          error: 'Chain proof unavailable'
+        }));
+      }
+    }
+
+    if (await twitchUserOAuth(req, res, url)) return;
     if (await twitchOAuth(req, res, url)) return;
     if (await twitchIngress(req, res, url)) return;
     if (url.pathname === '/integration/refresh' && req.method === 'POST') {
@@ -132,6 +208,40 @@ function createBridge({ env = process.env, twitchFactory = createTwitchChat, che
         res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(result));
       } catch { res.writeHead(409); return res.end(JSON.stringify({ error: 'Request rejected; inspect integration audit and provider records before retrying' })); }
     }
+    // Public hackathon pages: explicit allowlist, no directory browsing.
+    const publicPages = {
+      '/pinche-live': 'pinche-live.html',
+      '/': 'index.html',
+      '/overlay.html': 'overlay.html',
+      '/planet/reports': 'planet-reports.html',
+      '/planet/proofs': 'planet-proofs.html',
+      '/chess-replays.json': 'chess-replays.json',
+      '/chess.html': 'chess.html',
+      '/chess.css': 'chess.css',
+      '/chess.js': 'chess.js',
+      '/editorial.html': 'editorial.html',
+      '/judge-chess.html': 'judge-chess.html',
+      '/judge-planet.html': 'judge-planet.html',
+      '/judges.css': 'judges.css',
+      '/judges.js': 'judges.js'
+    };
+    if ((req.method === 'GET' || req.method === 'HEAD') &&
+        Object.prototype.hasOwnProperty.call(publicPages, url.pathname)) {
+      const filename = publicPages[url.pathname];
+      const file = path.join(__dirname, '../public', filename);
+      const contentType = filename.endsWith('.css')
+        ? 'text/css; charset=utf-8'
+        : filename.endsWith('.js')
+          ? 'text/javascript; charset=utf-8'
+          : 'text/html; charset=utf-8';
+      res.writeHead(200, {
+        'Content-Type': contentType,
+        'Cache-Control': 'no-store'
+      });
+      if (req.method === 'HEAD') return res.end();
+      return fs.createReadStream(file).pipe(res);
+    }
+
     if (url.pathname === '/overlay') {
       const file = path.join(__dirname, '../public/overlay.html');
       res.writeHead(200, {

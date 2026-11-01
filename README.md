@@ -1,4 +1,60 @@
-# Pinche Chess and AgroCeans — shared hackathon bridge
+# Pinche Chess and AgroCeans — Twitch integration
+
+## Current Agroland Live implementation
+
+Embedded Twitch video, individual account authorization and one chat composer.
+One authorization includes the user:write:chat permission.
+Messages are sent as the authorized user through Twitch's API.
+Signed EventSub messages populate the shared history.
+Sessions are remembered for up to seven days.
+Tokens remain in private server storage and must never enter Git.
+History contains up to 100 messages from the last ten minutes.
+A server restart clears history, but retains saved account sessions.
+Wallet ownership and reward delivery require separate integration.
+
+### Local setup
+
+Requires Node.js 22 or newer. Run:
+
+    npm ci --ignore-scripts
+    npm run check
+    npm test
+    node src/server.js
+
+The server binds to 127.0.0.1:8766.
+Tests use mocked providers; live authorization requires Twitch credentials.
+Use .env.example as reference without overwriting existing configuration.
+Load your private environment through the deployment system or:
+
+    node --env-file=.env src/server.js
+
+Use HTTPS and the registered callback:
+https://twitch.theagrostore.com/auth/twitch/callback
+
+Suppress query-string access logs on /auth/twitch/start and
+/auth/twitch/callback. Use one Node process for authorization.
+See docs/TWITCH_CHAT_ACTIVATION.md for channel EventSub setup.
+Keep AGRO_REAL_PAYMENTS_ENABLED=false for this demonstration.
+
+### Judge walkthrough
+
+Open /pinche-live, connect Twitch, authorize and return to Live.
+Send a message and verify it appears on Twitch.
+Send from Twitch and verify it appears in Agroland.
+Reopen Live to verify the remembered session.
+
+Mobile source:
+https://github.com/alejandrobarakat-coder/agroceans
+
+Verification: 186 automated tests passed with mocked providers.
+Android user testing confirmed authorization and message sending.
+This does not establish hackathon submission status.
+
+## Historical development notes
+
+The material below records earlier stages, including deployment statements
+that do not describe the current installation.
+
 
 Codex x TwitchCon Hackathon 2026
 

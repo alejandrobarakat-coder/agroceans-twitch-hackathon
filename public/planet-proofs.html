@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgroCeans | Verified Environmental Impact</title>
+<style>
+:root{color-scheme:dark}
+body{margin:0;background:#091612;color:#edf8f1;font:16px system-ui,Arial}
+main{max-width:1100px;margin:auto;padding:30px 18px}
+h1{font-size:clamp(28px,5vw,48px);margin-bottom:8px}
+p{color:#adc9b8;line-height:1.6}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:16px}
+.card{background:#142820;border:1px solid #315543;border-radius:15px;padding:20px;min-width:0}
+.card h2{margin-top:0}
+.tag{color:#9bf0b2;font-weight:700}
+a{color:#8de5bd}
+code{overflow-wrap:anywhere;font-size:12px}
+.stats{font-size:20px;color:#9bf0b2;margin:24px 0}
+small{color:#adc9b8}
+</style>
+</head>
+<body>
+<main>
+<h1>🌊 AgroCeans</h1>
+<h2>Verified Environmental Impact</h2>
+<p>Real environmental reports recorded through STAMP
+and rewarded on the independent AgroCoin blockchain.</p>
+<div class="stats" id="stats">Loading verified records…</div>
+<div class="grid" id="reports"></div>
+<p><small>Blockchain confirmations reflect the time of the
+published snapshot and are not live network counters.</small></p>
+
+<!-- PINCHE_CHESS_VERIFIED_MATCHES -->
+<section id="pinche-chess" style="margin-top:48px">
+<h2>♟️ Pinche Chess — Verified Match History</h2>
+<p>Completed games from the live Pinche Chess platform.
+These are historical matches, not Twitch-controlled games.</p>
+<div class="grid">
+
+    <article class="card">
+      <h2>Rick Sanchez vs Solchessito</h2>
+      <p class="tag">0-1</p>
+      <p>2026-10-28 · 15 minutes · resignation</p>
+      <details>
+        <summary>View original PGN</summary>
+        <p style="overflow-wrap:anywhere">1. e4 e5 2. d4 d6 3. d5 Nd7 4. Bb5 Nf6 5. f3 Be7 6. g4 O-O 7. f4 c6 8. dxc6 bxc6 9. Bxc6 Rb8 10. f5 Nc5 11. g5 Nfxe4 12. g6 fxg6 13. Bxe4 Bxf5 14. Bxf5 gxf5 15. Qd5+ Kh8 16. Nf3 e4 17. Nd4 Bh4+ 18. Kd2 Re8 19. Nxf5 Bg5+ 20. Kd1 e3 21. Ke2 g6 22. Nxd6 Rf8 23. Qxc5 Qe7 24. Bxe3 Bxe3 25. Qc4 Bf4+ 26. Kd3 Qxd6+ 27. Qd4+ Kg8 28. Nc3 Qa6+ 29. Ke4 Qe6+ 30. Kd3 Rbd8 31. Rhe1 Qa6+</p>
+      </details>
+    </article>
+
+
+    <article class="card">
+      <h2>Solchessito vs Rick Sanchez</h2>
+      <p class="tag">1-0</p>
+      <p>2026-10-27 · 12 minutes · resignation</p>
+      <details>
+        <summary>View original PGN</summary>
+        <p style="overflow-wrap:anywhere">1. e4 d5 2. d3 d4 3. Nf3 f6 4. Be2 e5 5. Nbd2 Nc6 6. c3 dxc3 7. bxc3 b5 8. Ba3 Bxa3 9. Nb3 a5 10. c4 Be7 11. O-O bxc4 12. dxc4 Nh6 13. Nh4 O-O 14. Nf5 g6 15. Nxh6+ Kh8 16. Ng4 Bxg4 17. Bxg4 h5 18. Bh3 g5 19. Bf5 g4 20. Qe2 Nd4 21. Qd3 Nxb3 22. Qxb3 Rg8 23. Qg3 Bf8 24. Qh4 Bh6 25. Qxh5 Kg7 26. Qg6+ Kf8 27. Qxh6+ Ke7 28. Qh7+ Kf8 29. Qh6+ Rg7 30. Qh8+ Ke7 31. Qxg7+ Kd6 32. Rfd1+</p>
+      </details>
+    </article>
+
+</div>
+</section>
+
+</main>
+<script>
+const explorer='https://agroland.theagrostore.com/tx/';
+const container=document.getElementById('reports');
+const stats=document.getElementById('stats');
+
+function el(tag,text,parent){
+  const node=document.createElement(tag);
+  node.textContent=String(text);
+  parent.appendChild(node);
+  return node;
+}
+
+function link(label,tx,parent){
+  const a=document.createElement('a');
+  a.textContent=label;
+  a.href=explorer+encodeURIComponent(tx);
+  a.target='_blank';
+  a.rel='noopener noreferrer';
+  parent.appendChild(a);
+}
+
+fetch('/planet/chain-proofs',{cache:'no-store'})
+.then(r=>{if(!r.ok)throw Error('API unavailable');return r.json()})
+.then(data=>{
+  if(data.simulated!==false||!Array.isArray(data.reports))
+    throw Error('Invalid proof data');
+
+  stats.textContent=data.reports.length+
+    ' verified reports · STAMP + AGRO rewards';
+
+  for(const report of data.reports){
+    const card=document.createElement('article');
+    card.className='card';
+    el('h2','Environmental report #'+report.postId,card);
+    el('p','Category code: '+report.stamp.categoryCode,card);
+    el('p','STAMP: '+report.stamp.confirmations+' confirmations',card);
+    link('Verify STAMP transaction',report.stamp.txid,card);
+    el('p','Reward: '+report.reward.confirmations+' confirmations',card);
+    link('Verify AGRO reward',report.reward.txid,card);
+    el('p','Report reference:',card);
+    el('code',report.folio,card);
+    container.appendChild(card);
+  }
+})
+.catch(()=>{
+  stats.textContent='Verified records temporarily unavailable';
+});
+</script>
+</body>
+</html>

@@ -22,3 +22,13 @@ node_modules/
 /.npm/
 /.npm-*/
 /coverage/
+
+# Agroland local artifacts
+*.backup*
+*.bak*
+*.before-*
+/code-backups/
+/public/pinche-live-media/
+*.apk
+*.aab
+*.ipa

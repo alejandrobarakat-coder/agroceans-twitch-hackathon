@@ -65,7 +65,7 @@ function fixture(t, options = {}) {
   }
   const client = new TwitchClient({ clientId: 'fixture-client', clientSecret: 'fixture-secret', fetchImpl });
   const tokens = new TwitchTokens({ client, storage, credentialsFile, broadcasterId: '123', readerId: '123', now });
-  function makeChat() { return new TwitchChat({ client, tokens, storage, broadcasterId: '123', readerId: '123', now, publish: event => published.push(event), refreshEnabled: !!options.refreshEnabled }); }
+  function makeChat() { return new TwitchChat({ client, tokens, storage, broadcasterId: '123', readerId: '123', now, publish: event => published.push(event), refreshEnabled: !!options.refreshEnabled, observeChat: options.observeChat }); }
   chat = makeChat();
   function signed(sub, type = 'notification', extra = {}, headerOverrides = {}) {
     const record = storage.transaction(() => storage.read('chat-state.json').registration);
@@ -684,4 +684,19 @@ test('overlay consumes live snapshots without mixing simulation counts or exposi
   assert.match(elements.get('realReports').children[1].textContent, /stamp:existing.*existing-tx.*service-reported/);
   planet.listeners.snapshot({ data: JSON.stringify({ status: 'unavailable', reports: [] }) });
   assert.equal(elements.get('realReports').children.length, 1);
+});
+
+test('public chat observer sees verified messages only after commit and cannot alter acknowledgements', async t => {
+  const observed=[];
+  const f=fixture(t,{observeChat: message=>observed.push(message)});
+  await f.ready();
+  const packet=f.message('Hello world','public-chat-1',{chatter_user_login:'viewer'});
+  assert.equal(f.chat.receive(packet).status,204);
+  assert.deepEqual(observed,[{id:'public-chat-1',login:'viewer',text:'Hello world'}]);
+  f.chat.receive(packet);assert.equal(observed.length,1);
+  const bad=f.message('Rejected','public-chat-2',{chatter_user_login:'viewer'});
+  bad.headers['twitch-eventsub-message-signature']='sha256='+'0'.repeat(64);
+  assert.throws(()=>f.chat.receive(bad));assert.equal(observed.length,1);
+  f.chat.observeChat=()=>{throw Error('Display failure');};
+  assert.equal(f.chat.receive(f.message('Accepted','public-chat-3',{chatter_user_login:'viewer'})).status,204);
 });

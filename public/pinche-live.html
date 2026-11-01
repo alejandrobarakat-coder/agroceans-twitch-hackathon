@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pinche Live | Pinche Tulum</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#090b10;color:white;font-family:system-ui}
+main{max-width:850px;margin:auto;padding:14px}
+h1{font-size:25px}
+video{width:100%;background:black;border-radius:12px}
+.card{background:#171c27;padding:16px;border-radius:12px;margin-top:14px}
+button{width:100%;padding:14px;background:#6441a5;color:white;border:0;border-radius:10px;font-size:16px}
+button:disabled{opacity:.55}
+small,p{color:#abb7c8}
+</style>
+</head>
+<body>
+
+<!-- AGROCEANS_TWITCH_CLEAN_V3 -->
+<section id="twitch-live-player"
+  style="width:100%;max-width:960px;margin:0 auto;padding:8px;box-sizing:border-box">
+
+  <h2>🔴 PINCHE LIVE</h2>
+
+  <iframe
+    id="twitch-video"
+    title="Pinche Live Twitch"
+    src="https://player.twitch.tv/?channel=alejandrobarakat&amp;parent=twitch.theagrostore.com&amp;muted=true"
+    allow="autoplay; fullscreen"
+    allowfullscreen
+    style="width:100%;aspect-ratio:16/9;border:0;background:#111">
+  </iframe>
+
+  <h3>💬 Live Chat</h3>
+  <!-- TWITCH_USER_PAIRING_V4 -->
+  <p id="twitch-account-status" hidden></p>
+  <button id="twitch-connect" type="button">Connect Twitch</button>
+  <button id="twitch-disconnect" type="button" hidden style="width:auto;padding:6px 10px;font-size:13px;background:transparent">Disconnect</button>
+  <p id="twitch-account-help" hidden></p>
+  <script>
+  (() => {
+    const base = '/auth/twitch/user/';
+    const status = document.getElementById('twitch-account-status');
+    const connect = document.getElementById('twitch-connect');
+    const disconnect = document.getElementById('twitch-disconnect');
+    const help = document.getElementById('twitch-account-help');
+    let busy = false;
+    async function api(action, post = false, input = {}) {
+      const response = await fetch(base + action, { method: post ? 'POST' : 'GET',
+        credentials: 'same-origin', cache: 'no-store', redirect: 'error',
+        ...(post ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) } : {}) });
+      const data = await response.json();
+      if (!response.ok) throw Error(data.error || 'Please try again.');
+      return data;
+    }
+    async function refresh() {
+      if (busy || document.hidden) return;
+      busy = true;
+      try {
+        const data = await api('status');
+        const connected = data.status === 'connected';
+        status.textContent = connected ? 'Connected as @' + data.identity.login :
+          data.status === 'pending' ? 'Waiting for Twitch authorization…' :
+          data.status === 'failed' ? 'Please try again.' : '';
+        status.hidden = !status.textContent;
+        connect.hidden = connected && data.chatReady;
+        connect.textContent = 'Connect Twitch';
+        const composer = document.getElementById('twitch-message-form');
+        if (composer) {
+          composer.hidden = !(connected && data.chatReady);
+          composer.style.display = composer.hidden ? 'none' : 'block';
+        }
+        disconnect.hidden = !connected;
+        help.hidden = true;
+      } catch { /* Background checks remain silent. */ }
+      finally { busy = false; }
+    }
+    connect.onclick = async () => {
+      if (busy) return;
+      busy = true; connect.disabled = true;
+      try {
+        const data = await api('request', true);
+        const target = new URL(data.authorizeUrl);
+        if (target.origin !== location.origin || target.pathname !== '/auth/twitch/start') throw Error();
+        status.hidden = false; status.textContent = 'Opening Twitch…';
+        location.assign(target.href);
+      } catch { status.hidden = false; status.textContent = 'Please try again.'; }
+      finally { busy = false; connect.disabled = false; }
+    };
+    disconnect.onclick = async () => {
+      if (busy) return;
+      busy = true; disconnect.disabled = true;
+      try { await api('logout', true); } catch { status.hidden = false; status.textContent = 'Please try again.'; }
+      finally { busy = false; disconnect.disabled = false; }
+      await refresh();
+    };
+    document.addEventListener('visibilitychange', refresh);
+    window.addEventListener('focus', refresh);
+    setInterval(refresh, 5000); refresh();
+  })();
+  </script>
+
+
+  <form id="twitch-message-form" hidden style="display:none;margin-top:10px">
+    <label for="twitch-message" style="position:absolute;left:-10000px">Message</label>
+    <input id="twitch-message" name="message" maxlength="500" autocomplete="off"
+      placeholder="Send a message" required
+      style="width:100%;padding:14px;border-radius:10px;border:1px solid #384054;background:#171c27;color:white;font-size:16px">
+    <button id="twitch-send" type="submit" style="margin-top:8px">Send</button>
+    <p id="twitch-send-error" role="status" hidden></p>
+  </form>
+  <script>
+  (() => {
+    const form = document.getElementById('twitch-message-form');
+    const input = document.getElementById('twitch-message');
+    const button = document.getElementById('twitch-send');
+    const notice = document.getElementById('twitch-send-error');
+    let sending = false;
+    new MutationObserver(() => { form.style.display = form.hidden ? 'none' : 'block'; }).observe(form, { attributes: true, attributeFilter: ['hidden'] });
+    form.onsubmit = async event => {
+      event.preventDefault();
+      if (sending || !input.value.trim()) return;
+      sending = true; button.disabled = true; notice.hidden = true;
+      try {
+        const response = await fetch('/auth/twitch/user/send', { method: 'POST', credentials: 'same-origin',
+          cache: 'no-store', redirect: 'error', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: input.value.trim() }) });
+        const data = await response.json();
+        if (!response.ok || data.sent !== true) {
+          notice.textContent = typeof data.error === 'string' ? data.error : 'Check chat before sending again.';
+          notice.hidden = false; return;
+        }
+        input.value = '';
+      } catch {
+        notice.textContent = 'Check chat before sending again.';
+        notice.hidden = false;
+      } finally { sending = false; button.disabled = false; }
+    };
+  })();
+  </script>
+
+  <div id="live-message-history" role="log" aria-label="Live chat messages"
+    style="max-height:320px;min-height:100px;overflow-y:auto;margin-top:14px;padding:12px;background:#11151e;border-radius:10px"></div>
+  <script>
+  (() => {
+    const history = document.getElementById('live-message-history');
+    let busy = false, previous = '';
+    async function refreshMessages() {
+      if (busy || document.hidden) return;
+      busy = true;
+      try {
+        const response = await fetch('/auth/twitch/user/messages', { cache: 'no-store', credentials: 'same-origin', redirect: 'error' });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!Array.isArray(data.messages)) return;
+        const signature = JSON.stringify(data.messages);
+        if (signature === previous) return;
+        previous = signature;
+        const follow = history.scrollHeight - history.scrollTop - history.clientHeight < 50;
+        const fragment = document.createDocumentFragment();
+        for (const message of data.messages) {
+          const row = document.createElement('p');
+          row.style.cssText = 'margin:6px 0;overflow-wrap:anywhere;color:#e4e8f0';
+          const name = document.createElement('strong'); name.style.color = '#bc9cff';
+          name.textContent = message.login + ': ';
+          row.append(name, document.createTextNode(message.text)); fragment.append(row);
+        }
+        history.replaceChildren(fragment);
+        if (follow) history.scrollTop = history.scrollHeight;
+      } catch { /* Keep chat clean during temporary connection failures. */ }
+      finally { busy = false; }
+    }
+    window.addEventListener('focus', refreshMessages);
+    document.addEventListener('visibilitychange', refreshMessages);
+    setInterval(refreshMessages, 2000); refreshMessages();
+  })();
+  </script>
+
+</section>
+
+<main id="legacy-live" hidden>
+
+<h1>🔴 Pinche Live</h1>
+
+<video id="player" muted playsinline controls></video>
+
+<section class="card">
+<strong id="program">Loading schedule...</strong>
+<p>Pinche Tulum · AgroCeans · Continuous programming</p>
+</section>
+
+<section class="card">
+<h2>Comments</h2>
+<p>Live comments will be enabled with community sessions.</p>
+</section>
+
+<section class="card">
+<h2>Want to stream?</h2>
+<button disabled>🎥 Go live — Coming soon</button>
+<small>Camera and microphone integration is coming soon.</small>
+</section>
+</main>
+
+<script>
+const playlist = [{"title": "Pinche Tulum · Cinema", "url": "/pinche-live-media/cinema.mp4"}, {"title": "Pinche Tulum · Technology", "url": "/pinche-live-media/technology.mp4"}, {"title": "AgroCeans · Our Planet", "url": "/pinche-live-media/agroceans.mp4"}];
+const player = document.getElementById('player');
+const program = document.getElementById('program');
+let current = 0;
+
+function playCurrent() {
+  const item = playlist[current];
+  program.textContent = item.title;
+  player.src = item.url;
+  player.load();
+  player.play().catch(() => {
+    program.textContent = item.title + ' · Tap to play';
+  });
+}
+
+player.addEventListener('ended', () => {
+  current = (current + 1) % playlist.length;
+  playCurrent();
+});
+
+player.addEventListener('error', () => {
+  program.textContent = 'Unable to load the current video';
+});
+
+playCurrent();
+</script>
+
+<script>
+/* PINCHE_LIVE_FALLBACK_V1 */
+document.addEventListener('DOMContentLoaded', function () {
+  const video = document.getElementById('player');
+  if (!video) return;
+
+  video.pause();
+  video.removeAttribute('autoplay');
+
+  // El carrusel queda disponible como respaldo,
+  // pero no se reproduce junto con Twitch.
+  const container = video.parentElement;
+  if (container) container.style.display = 'none';
+
+  video.addEventListener('play', function () {
+    video.pause();
+  });
+});
+</script>
+
+</body>
+</html>

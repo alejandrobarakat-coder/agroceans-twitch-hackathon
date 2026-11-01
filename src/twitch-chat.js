@@ -9,9 +9,9 @@ const DIRECTORY = path.resolve(__dirname, '../var/twitch-chat');
 const subscriptionId = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,160}$/.test(value);
 const freshState = () => ({ version: 1, registration: null, deliveries: {}, messages: {}, participants: {}, commands: 0, lastEventAt: null });
 class TwitchChat {
-  constructor({ client, tokens, storage, broadcasterId, readerId, now = Date.now, publish = () => {}, refreshEnabled = false, paymentsEnabled = false, chessSession = null }) {
+  constructor({ client, tokens, storage, broadcasterId, readerId, now = Date.now, publish = () => {}, refreshEnabled = false, paymentsEnabled = false, chessSession = null, observeChat = () => {} }) {
     check(!paymentsEnabled, 'payments_must_be_disabled');
-    Object.assign(this, { client, tokens, storage, broadcasterId, readerId, now, publish, refreshEnabled, chessSession });
+    Object.assign(this, { client, tokens, storage, broadcasterId, readerId, now, publish, refreshEnabled, chessSession, observeChat });
     this.observed = { status: 'unknown', checkedAt: 0 }; this.timer = null; this.running = null;
   }
   state() {
@@ -126,6 +126,7 @@ class TwitchChat {
     const signature = headers['twitch-eventsub-message-signature'], type = headers['twitch-eventsub-message-type'];
     check(typeof delivery === 'string' && delivery.length > 0 && delivery.length <= 512 && typeof timestamp === 'string' && Number.isFinite(Date.parse(timestamp)) && Math.abs(this.now() - Date.parse(timestamp)) <= 300000, 'invalid_webhook');
     let event;
+    let chatMessage;
     const result = this.storage.transaction(() => {
       const s = this.state(), r = s.registration;
       check(this.bound(r) && typeof r.secret === 'string' && /^[a-f0-9]{64}$/.test(r.secret), 'unapproved_subscription');
@@ -158,6 +159,7 @@ class TwitchChat {
         const value = payload.event;
         check(value?.broadcaster_user_id === this.broadcasterId && /^\d{1,30}$/.test(value.chatter_user_id || '') && typeof value.message_id === 'string' && value.message_id.length > 0 && value.message_id.length <= 160 && typeof value.message?.text === 'string' && value.message.text.length <= 2000, 'invalid_webhook');
         check(!value.source_broadcaster_user_id || value.source_broadcaster_user_id === this.broadcasterId, 'shared_chat_not_allowed');
+        chatMessage = { id: value.message_id, login: value.chatter_user_login || ('user_' + value.chatter_user_id), text: value.message.text };
         r.status = 'enabled'; this.observed = { status: 'enabled', checkedAt: this.now() }; s.lastEventAt = this.now();
         const envelope = commandEnvelope(value, { broadcasterId: this.broadcasterId, timestamp: Date.parse(timestamp) });
         // Legacy messages remain authoritative after upgrading an existing store.
@@ -186,6 +188,7 @@ class TwitchChat {
     });
     // Persist deduplication and counters before publishing/acknowledging. An SSE
     // reconnect snapshot recovers a crash between persistence and publication.
+    if (chatMessage) { try { this.observeChat(chatMessage); } catch { /* Chat display cannot interrupt EventSub acknowledgement. */ } }
     if (event) this.publish({ ...event, twitchStatus: this.health() });
     return result;
   }
@@ -200,7 +203,7 @@ class TwitchChat {
   start() { if (this.timer) return; void this.maintain(); this.timer = setInterval(() => { void this.maintain(); }, 60000); this.timer.unref(); }
   stop() { if (this.timer) clearInterval(this.timer); this.timer = null; }
 }
-function createTwitchChat({ env = process.env, fetchImpl, now, publish, directory = DIRECTORY, credentialsFile } = {}) {
+function createTwitchChat({ env = process.env, fetchImpl, now, publish, observeChat, directory = DIRECTORY, credentialsFile } = {}) {
   check(env.AGRO_REAL_PAYMENTS_ENABLED === 'false', 'payments_must_be_disabled');
   const storage = new TwitchStorage(directory), client = new TwitchClient({ clientId: env.TWITCH_CLIENT_ID, clientSecret: env.TWITCH_CLIENT_SECRET, fetchImpl });
   const broadcasterId = env.TWITCH_BROADCASTER_ID, readerId = env.TWITCH_CHAT_READER_ID || broadcasterId;
@@ -208,7 +211,7 @@ function createTwitchChat({ env = process.env, fetchImpl, now, publish, director
   const chessSession = env.CHESS_SESSION_ENABLED === 'true' ? new (require('./chess-session').ChessSession)({
     directory: path.resolve(directory, '../chess'), broadcasterId, sessionId: env.CHESS_SESSION_ID || 'hackathon'
   }) : null;
-  return new TwitchChat({ client, tokens, storage, broadcasterId, readerId, now, publish, chessSession, refreshEnabled: env.TWITCH_TOKEN_REFRESH_ENABLED === 'true' });
+  return new TwitchChat({ client, tokens, storage, broadcasterId, readerId, now, publish, observeChat, chessSession, refreshEnabled: env.TWITCH_TOKEN_REFRESH_ENABLED === 'true' });
 }
 function eventSubHandler(chat) {
   return async (req, res, url) => {
