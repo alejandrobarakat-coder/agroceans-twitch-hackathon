@@ -6,7 +6,7 @@ using the following TEST ACCOUNT.
 **Download Android APK:**
 https://agroland.theagrostore.com/agroceans-release.apk
 
-**AgroCeans / Mastodon login:**
+**AgroCeans login:**
 
 - Email: `domenzainro@gmail.com`
 - Password: `agrocoin12345`
