@@ -1,4 +1,29 @@
-# AgroCeans — Twitch integration
+## IMPORTANT — JUDGE ACCESS TO AGROCEANS
+
+The hackathon judges can access the AgroCeans mobile app
+using the following TEST ACCOUNT.
+
+**Download Android APK:**
+https://agroland.theagrostore.com/agroceans-release.apk
+
+**AgroCeans / Mastodon login:**
+
+- Email: `domenzainro@gmail.com`
+- Password: `agrocoin12345`
+
+### How to evaluate
+
+1. Download and install the Android APK.
+2. Open AgroCeans.
+3. Enter the email and password shown above in the app login screen.
+4. Explore environmental reports, community features and Pinche Chess.
+5. Open the Live section.
+6. Select Connect Twitch and authorize your own Twitch account.
+7. Test Twitch chat and the integrated experience.
+
+These credentials are for the AgroCeans app, NOT GitHub or Twitch.
+
+# AgroCeans — Live, Play & Act
 
 ## Hackathon submission — AgroCeans
 
@@ -37,8 +62,13 @@ Codex session evidence: the session ID/link still needs to be added.
 
 ## Judge access — November 1, 2026
 
-- [Download Android APK](https://github.com/alejandrobarakat-coder/agroceans/releases/download/v1.0.0-20261103/app-release.apk)
-- [Android release details](https://github.com/alejandrobarakat-coder/agroceans/releases/tag/v1.0.0-20261103)
+- [Android APK — repository access required](https://github.com/alejandrobarakat-coder/agroceans/releases/download/v1.0.0-20261103/app-release.apk)
+- [Android release details — repository access required](https://github.com/alejandrobarakat-coder/agroceans/releases/tag/v1.0.0-20261103)
+- Anonymous download currently returns 404 because the repository is private.
+  A public APK mirror is proposed but has not been published. See the
+  [delivery plan](docs/DELIVERY_ACCESS_PLAN.md) before sharing judge instructions.
+  Verified APK SHA-256:
+  `2c5a2a842625de6d2c5215a8ced654a6c6cd62501e31499e2b36780c10bde2d8`.
 - iOS: build 5 tested internally; external TestFlight review pending.
   A public invitation will be added after approval.
 
@@ -328,7 +358,7 @@ the payment kill switch. `POST /planet/refresh` requires operator authentication
 `GET /planet/snapshot` and `/planet/events` publish only redacted observations.
 Existing !ocean participation remains unchanged. No STAMP or AGRO is issued.
 
-## Two judge demos and editorial desk (Stage 5)
+## AgroCeans module demos and editorial desk (Stage 5)
 
 All new routes default disabled. See [judge demos and exact local commands](docs/JUDGE_DEMOS.md).
 An isolated simulation for all three pages requires no Twitch credentials:
@@ -345,7 +375,7 @@ Terminal inputs: `chess e2e4`, `chess e7e5`, `planet !ocean viewer1`,
 `planet report sample1`. Reports are explicitly synthetic and have no STAMP.
 The browser is read-only. No local process is started by these source changes.
 
-## Twitch readiness for both projects (Stage 6A)
+## Twitch readiness for AgroCeans modules (Stage 6A)
 
 Run `npm run test:twitch-readiness` for synthetic signed-webhook-to-judge coverage.
 The harness uses fake providers and a clean child environment; it cannot target a
